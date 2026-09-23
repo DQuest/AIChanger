@@ -1,15 +1,12 @@
 [versions]
 agp = "9.3.1"
 coreKtx = "1.19.0"
-shizuku = "13.1.5"
 libadb = "3.1.1"
 conscrypt = "2.5.3"
 bouncycastle = "1.81"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
-shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
-shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 libadb-android = { group = "com.github.MuntashirAkon", name = "libadb-android", version.ref = "libadb" }
 conscrypt-android = { group = "org.conscrypt", name = "conscrypt-android", version.ref = "conscrypt" }
 # Та же линейка Bouncy Castle, что тянет libadb-android (bcprov-jdk15to18), иначе будут дубли классов.

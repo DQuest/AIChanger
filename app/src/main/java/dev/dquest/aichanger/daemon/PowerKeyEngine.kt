@@ -1,4 +1,4 @@
-package dev.dquest.aichanger
+package dev.dquest.aichanger.daemon
 
 import java.io.DataInputStream
 import java.io.FileInputStream
@@ -8,71 +8,62 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
-import kotlin.system.exitProcess
 
 /**
- * Shizuku UserService: работает в отдельном процессе с uid shell.
+ * Логика кнопки питания. Работает в процессе [PowerKeyDaemon] с uid shell.
  *
  * Читает сырые события кнопки питания (`pmic_pwrkey`) из /dev/input. При удержании
  * дольше порога закрывает меню питания vivo и отправляет KEYCODE_VOICE_ASSIST или KEYCODE_ASSIST,
  * которые PhoneWindowManager передаёт системному ассистенту (Gemini): сразу с голосовым вводом или без.
+ * Если держать дольше [powerMenuMs], закрывает Gemini и открывает штатное меню питания vivo:
+ * своё меню vivo уже не покажет, потому что нажатие питания помечено обработанным.
  */
-class PowerKeyService : IPowerKeyService.Stub() {
+class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Volatile var voiceMode: Boolean) {
 
-    private val scheduler = Executors.newSingleThreadScheduledExecutor()
+    // Два потока: вызов Gemini может ждать разблокировки до 15 с, а меню ждать его не должно.
+    private val scheduler = Executors.newScheduledThreadPool(2)
     private var pendingFire: ScheduledFuture<*>? = null
+    private var pendingMenu: ScheduledFuture<*>? = null
+    // Номер текущего нажатия и нажатия, для которого уже открыто меню: тогда Gemini для него не нужен.
+    @Volatile private var press = 0
+    @Volatile private var menuPress = -1
 
-    @Volatile private var holdMs = Config.DEFAULT_HOLD_MS
-    @Volatile private var voiceMode = true
     @Volatile private var active = false
     @Volatile private var reader: Thread? = null
     @Volatile private var device: String? = null
     @Volatile private var lastError: String? = null
     @Volatile private var fired = 0
 
-    override fun start(holdMs: Int) {
+    fun start() {
         synchronized(this) {
-            this.holdMs = holdMs
             active = true
             if (reader?.isAlive == true) return
             reader = thread(name = "power-key-reader") { readLoop() }
         }
     }
 
-    override fun stop() {
+    fun stop() {
         synchronized(this) {
-            // Поток чтения заметит флаг на следующем событии; при удалении службы процесс завершается целиком.
+            // Поток чтения заметит флаг на следующем событии; демон после остановки завершается целиком.
             active = false
             pendingFire?.cancel(false)
+            pendingMenu?.cancel(false)
         }
     }
 
-    override fun isRunning() = active && reader?.isAlive == true
+    fun isRunning() = active && reader?.isAlive == true
 
-    override fun status(): String = buildString {
+    fun status(): String = buildString {
         append("Устройство: ${device ?: "—"}\n")
-        append("Порог удержания: $holdMs мс\n")
+        append("Порог удержания: $holdMs мс, меню питания: $powerMenuMs мс\n")
         append("Режим: ${if (voiceMode) "голосовой ввод" else "окно без прослушивания"}\n")
         append("Вызовов Gemini: $fired\n")
         append("BlueLM на кнопке: ${if (sh(GET_BLUELM_SWITCH).trim() == "1") "включён" else "выключен"}")
         lastError?.let { append("\nОшибка: $it") }
     }
 
-    override fun setBlueLmOnPowerKey(enabled: Boolean) {
-        // vivo молча игнорирует `settings put` для этих ключей, а запись через провайдер работает.
-        sh(
-            "content insert --uri content://settings/system " +
-                "--bind name:s:$BLUELM_SWITCH --bind value:s:${if (enabled) 1 else 0}"
-        )
-    }
-
-    override fun setVoiceMode(voice: Boolean) {
-        voiceMode = voice
-    }
-
-    override fun destroy() {
-        stop()
-        exitProcess(0)
+    fun setBlueLmOnPowerKey(enabled: Boolean) {
+        sh(DaemonProtocol.blueLmCommand(enabled))
     }
 
     private fun readLoop() {
@@ -104,13 +95,26 @@ class PowerKeyService : IPowerKeyService.Stub() {
         when (value) {
             KEY_DOWN -> {
                 pendingFire?.cancel(false)
-                pendingFire = scheduler.schedule(::invokeAssistant, holdMs.toLong(), TimeUnit.MILLISECONDS)
+                pendingMenu?.cancel(false)
+                val id = ++press
+                pendingFire = scheduler.schedule({ invokeAssistant(id) }, holdMs.toLong(), TimeUnit.MILLISECONDS)
+                pendingMenu = scheduler.schedule({ showPowerMenu(id) }, powerMenuMs.toLong(), TimeUnit.MILLISECONDS)
             }
-            KEY_UP -> pendingFire?.cancel(false)
+            KEY_UP -> {
+                pendingFire?.cancel(false)
+                pendingMenu?.cancel(false)
+            }
         }
     }
 
-    private fun invokeAssistant() {
+    private fun showPowerMenu(id: Int) {
+        menuPress = id
+        // Закрываем уже открытый Gemini и вызываем меню так же, как его вызвало бы долгое нажатие.
+        // Демон этого нажатия не увидит: внедрённые события не проходят через /dev/input.
+        sh("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null; input keyevent --longpress KEYCODE_POWER")
+    }
+
+    private fun invokeAssistant(id: Int) {
         // Сначала закрываем меню питания: CLOSE_SYSTEM_DIALOGS, отправленный после, спрятал бы и Gemini.
         sh("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null")
         // Экран блокировки vivo не пропускает панель Gemini (остаётся только рамка),
@@ -120,12 +124,13 @@ class PowerKeyService : IPowerKeyService.Stub() {
             // Без этого отпускание кнопки сработает как короткое нажатие и погасит экран.
             // На разблокированном экране эту роль играет сама клавиша вызова ассистента.
             sh("input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard")
-            if (!waitForUnlock()) return
+            if (!waitForUnlock() || menuPress == id) return
             Thread.sleep(UNLOCK_SETTLE_MS)
         }
         // Сразу после первой разблокировки Google-приложение ещё поднимается, и панель Gemini
         // может закрыться сама (мелькнёт только рамка). Тогда вызываем ещё раз.
         repeat(ASSIST_ATTEMPTS) {
+            if (menuPress == id) return
             sh("input keyevent ${if (voiceMode) "KEYCODE_VOICE_ASSIST" else "KEYCODE_ASSIST"}")
             if (waitForGemini()) {
                 fired++
@@ -177,8 +182,7 @@ class PowerKeyService : IPowerKeyService.Stub() {
 
     private companion object {
         const val POWER_DEVICE_NAME = "pmic_pwrkey"
-        const val BLUELM_SWITCH = "vivo_jovi_power_wakeup_switch"
-        const val GET_BLUELM_SWITCH = "settings get system $BLUELM_SWITCH"
+        const val GET_BLUELM_SWITCH = "settings get system vivo_jovi_power_wakeup_switch"
         const val INPUT_EVENT_SIZE = 24
         const val EV_KEY = 1
         const val KEY_POWER = 116

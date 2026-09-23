@@ -10,22 +10,22 @@ import android.os.IBinder
 import android.util.Log
 import kotlin.concurrent.thread
 
-/** Запускает Shizuku после загрузки (или по кнопке) и завершается. */
+/** Запускает демон кнопки после загрузки (или по кнопке «Включить») и завершается. */
 class AutoStartService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         PairingService.ensureChannel(this)
-        startForeground(NOTIFICATION_ID, notification("Запуск Shizuku…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        thread(name = "shizuku-autostart") {
-            val result = runCatching { ShizukuStarter.start(this) }
+        startForeground(NOTIFICATION_ID, notification("Запуск перехвата кнопки…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        thread(name = "daemon-autostart") {
+            val result = runCatching { PowerKeyController.ensureRunning(this) }
             Log.i(TAG, "autostart: $result")
             stopForeground(STOP_FOREGROUND_REMOVE)
             // Об успехе не сообщаем, чтобы не мешать; об ошибке оставляем уведомление.
             result.exceptionOrNull()?.let {
                 getSystemService(NotificationManager::class.java)
-                    .notify(NOTIFICATION_ID, notification("Не удалось запустить Shizuku: ${it.message}"))
+                    .notify(NOTIFICATION_ID, notification("Не удалось запустить перехват кнопки: ${it.message}"))
             }
             stopSelf()
         }

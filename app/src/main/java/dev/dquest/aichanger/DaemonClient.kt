@@ -1,0 +1,34 @@
+package dev.dquest.aichanger
+
+import dev.dquest.aichanger.daemon.DaemonProtocol
+import java.net.InetSocketAddress
+import java.net.Socket
+
+/** Команды демону по [DaemonProtocol]. Блокирующие, вызывать не из главного потока. */
+object DaemonClient {
+
+    private const val CONNECT_TIMEOUT_MS = 500
+    private const val READ_TIMEOUT_MS = 3000
+
+    /** versionCode работающего демона или null, если он не запущен (или не наш: другой токен). */
+    fun ping(token: String): Int? = request(token, DaemonProtocol.PING)?.trim()?.toIntOrNull()
+
+    fun status(token: String): String? = request(token, DaemonProtocol.STATUS)
+
+    fun setVoiceMode(token: String, voice: Boolean) =
+        request(token, "${DaemonProtocol.MODE} ${if (voice) DaemonProtocol.MODE_VOICE else DaemonProtocol.MODE_WINDOW}")
+
+    fun stop(token: String) = request(token, DaemonProtocol.STOP)
+
+    private fun request(token: String, command: String): String? = runCatching {
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(DaemonProtocol.HOST, DaemonProtocol.PORT), CONNECT_TIMEOUT_MS)
+            socket.soTimeout = READ_TIMEOUT_MS
+            socket.getOutputStream().apply {
+                write("$token $command\n".toByteArray())
+                flush()
+            }
+            socket.getInputStream().bufferedReader().readText()
+        }
+    }.getOrNull()?.takeIf { it != DaemonProtocol.DENIED }
+}

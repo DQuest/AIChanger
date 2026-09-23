@@ -1,140 +1,131 @@
 package dev.dquest.aichanger
 
-import android.content.ComponentName
 import android.content.Context
-import android.content.ServiceConnection
-import android.content.pm.PackageManager
-import android.os.IBinder
-import android.util.Log
-import rikka.shizuku.Shizuku
+import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.Executors
 
-object Config {
-    const val DEFAULT_HOLD_MS = 600
-}
-
-/** Сторона приложения: хранит флаг «включено» и держит связь с [PowerKeyService] через Shizuku. */
+/** Сторона приложения: настройки и связь с демоном ([DaemonClient], [DaemonLauncher]). */
 object PowerKeyController {
 
-    private const val TAG = "AIChanger"
     private const val PREFS = "aichanger"
     private const val KEY_ENABLED = "enabled"
-    private const val KEY_AUTOSTART = "autostart"
     private const val KEY_PAIRED = "paired"
     private const val KEY_VOICE = "voice"
-
-    @Volatile var service: IPowerKeyService? = null
-        private set
+    private const val KEY_TOKEN = "token"
 
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
+    private val background = Executors.newSingleThreadExecutor()
     // Хранилище, доступное до первой разблокировки после загрузки (Direct Boot).
     private lateinit var storage: Context
 
-    private val serviceArgs by lazy {
-        Shizuku.UserServiceArgs(ComponentName(BuildConfig.APPLICATION_ID, PowerKeyService::class.java.name))
-            .daemon(true) // служба переживает закрытие приложения
-            .processNameSuffix("powerkey")
-            .debuggable(BuildConfig.DEBUG)
-            .version(BuildConfig.VERSION_CODE)
-    }
-
-    private val connection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-            val connected = IPowerKeyService.Stub.asInterface(binder)
-            service = connected
-            if (isEnabled) runCatching { configure(connected) }.onFailure { Log.w(TAG, it) }
-            notifyListeners()
-        }
-
-        override fun onServiceDisconnected(name: ComponentName) {
-            service = null
-            notifyListeners()
-        }
-    }
+    /** versionCode работающего демона, null — не запущен. Обновляется [refreshAsync]. */
+    @Volatile var daemonVersion: Int? = null
+        private set
+    @Volatile var daemonStatus: String? = null
+        private set
+    /** Причина последнего неудачного запуска демона, null — запуск не падал или ещё не пробовали. */
+    @Volatile var lastLaunchError: String? = null
+        private set
+    @Volatile var launching = false
+        private set
 
     fun init(context: Context) {
         storage = context.applicationContext.createDeviceProtectedStorageContext()
         // Перенос настроек из версий до 0.5; до первой разблокировки недоступно, тогда пропускаем.
         runCatching { storage.moveSharedPreferencesFrom(context.applicationContext, PREFS) }
-        // Приходит и при запуске приложения, и когда позже запускается сам Shizuku.
-        Shizuku.addBinderReceivedListenerSticky {
-            if (isEnabled && hasPermission()) bind()
-            notifyListeners()
-        }
-        Shizuku.addBinderDeadListener {
-            service = null
-            notifyListeners()
-        }
-        Shizuku.addRequestPermissionResultListener { _, result ->
-            if (result == PackageManager.PERMISSION_GRANTED && isEnabled) bind()
-            notifyListeners()
-        }
     }
 
     private val prefs get() = storage.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** Включён ли перехват. Если да, демон запускается и после перезагрузки. */
     val isEnabled: Boolean get() = prefs.getBoolean(KEY_ENABLED, false)
-
-    private fun setEnabled(value: Boolean) = prefs.edit().putBoolean(KEY_ENABLED, value).apply()
-
-    val isAutoStartEnabled: Boolean get() = prefs.getBoolean(KEY_AUTOSTART, false)
-
-    fun setAutoStartEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_AUTOSTART, value).apply()
-        notifyListeners()
-    }
 
     /** По умолчанию Gemini сразу слушает, как при удержании кнопки на Samsung. */
     val isVoiceMode: Boolean get() = prefs.getBoolean(KEY_VOICE, true)
 
-    fun setVoiceMode(value: Boolean) {
-        prefs.edit().putBoolean(KEY_VOICE, value).apply()
-        service?.let { runCatching { it.setVoiceMode(value) }.onFailure { e -> Log.w(TAG, e) } }
-        notifyListeners()
-    }
-
     val isPaired: Boolean get() = prefs.getBoolean(KEY_PAIRED, false)
+
+    val isDaemonRunning: Boolean get() = daemonVersion != null
+
+    /** Секрет для команд демону; передаётся ему при запуске. */
+    private val token: String
+        get() = prefs.getString(KEY_TOKEN, null) ?: ByteArray(16).also { SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }
+            .also { prefs.edit().putString(KEY_TOKEN, it).apply() }
 
     fun setPaired(value: Boolean) {
         prefs.edit().putBoolean(KEY_PAIRED, value).apply()
         notifyListeners()
     }
 
-    fun isShizukuRunning() = Shizuku.pingBinder()
-
-    fun hasPermission() = isShizukuRunning() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-
-    fun requestPermission() = Shizuku.requestPermission(0)
-
-    fun enable() {
-        setEnabled(true)
-        val current = service
-        if (current != null) configure(current) else bind()
+    fun setEnabled(value: Boolean) {
+        prefs.edit().putBoolean(KEY_ENABLED, value).apply()
         notifyListeners()
     }
 
-    private fun configure(service: IPowerKeyService) {
-        service.setVoiceMode(isVoiceMode)
-        service.start(Config.DEFAULT_HOLD_MS)
-    }
-
-    /** Останавливает службу и возвращает BlueLM на кнопку питания. */
-    fun disable() {
-        setEnabled(false)
-        service?.let {
-            runCatching {
-                it.stop()
-                it.setBlueLmOnPowerKey(true)
-            }.onFailure { e -> Log.w(TAG, e) }
+    fun setVoiceMode(value: Boolean) {
+        prefs.edit().putBoolean(KEY_VOICE, value).apply()
+        background.execute {
+            DaemonClient.setVoiceMode(token, value)
+            refresh()
         }
-        if (isShizukuRunning()) Shizuku.unbindUserService(serviceArgs, connection, true)
-        service = null
-        notifyListeners()
     }
 
-    private fun bind() {
-        if (!hasPermission()) return
-        runCatching { Shizuku.bindUserService(serviceArgs, connection) }.onFailure { Log.w(TAG, it) }
+    /**
+     * Блокирующий вызов: убеждается, что работает демон этой версии, иначе запускает его заново.
+     * Бросает исключение с понятным текстом, если запустить не удалось. Вызовы не пересекаются:
+     * второй дождётся первого и увидит уже работающий демон.
+     */
+    @Synchronized
+    fun ensureRunning(context: Context) {
+        launching = true
+        notifyListeners()
+        try {
+            if (DaemonClient.ping(token) == BuildConfig.VERSION_CODE) {
+                DaemonClient.setVoiceMode(token, isVoiceMode)
+            } else {
+                check(isPaired) { "сначала выполните сопряжение с беспроводной отладкой" }
+                DaemonLauncher.launch(context, token, isVoiceMode)
+            }
+            lastLaunchError = null
+        } catch (e: Exception) {
+            lastLaunchError = e.message
+            throw e
+        } finally {
+            launching = false
+            refresh()
+        }
+    }
+
+    /** Останавливает демон; он сам возвращает BlueLM на кнопку питания. */
+    fun disable(context: Context) {
+        setEnabled(false)
+        val appContext = context.applicationContext
+        background.execute {
+            if (DaemonClient.stop(token) == null) {
+                runCatching { DaemonLauncher.restoreBlueLm(appContext) }
+            }
+            refresh()
+        }
+    }
+
+    fun refreshAsync() = background.execute { refresh() }
+
+    /**
+     * Вызывается при открытии приложения: если перехват включён, а демон не отвечает или прежней версии,
+     * запускает его. Так чинятся неудачный автозапуск (не было Wi-Fi, vivo не разбудила приложение),
+     * убитый демон и обновление, после которого vivo отбросила MY_PACKAGE_REPLACED.
+     */
+    fun startIfNeeded(context: Context) = background.execute {
+        refresh()
+        if (isEnabled && isPaired && daemonVersion != BuildConfig.VERSION_CODE) AutoStartService.start(context)
+    }
+
+    private fun refresh() {
+        daemonVersion = DaemonClient.ping(token)
+        daemonStatus = if (daemonVersion != null) DaemonClient.status(token) else null
+        notifyListeners()
     }
 
     fun addListener(listener: () -> Unit) = listeners.add(listener)

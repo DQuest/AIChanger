@@ -14,8 +14,9 @@ import io.github.muntashirakon.adb.android.AdbMdns
 import kotlin.concurrent.thread
 
 /**
- * Сопряжение с беспроводной отладкой. Пользователь открывает «Сопряжение по коду» в настройках,
- * служба находит порт через mDNS и принимает шестизначный код прямо из уведомления.
+ * Сопряжение с беспроводной отладкой. Пользователь открывает «Сопряжение по коду» в настройках
+ * и вводит шестизначный код прямо в уведомлении. Порт окна сопряжения служба ищет через mDNS;
+ * на vivo поиск иногда ничего не находит, тогда пользователь вводит порт вместе с кодом.
  */
 class PairingService : Service() {
 
@@ -27,9 +28,8 @@ class PairingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_CODE -> {
-                val code = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_CODE)?.toString()?.trim()
-                if (code.isNullOrEmpty() || pairingPort == -1) notify("Код не введён, откройте окно сопряжения ещё раз")
-                else pair(pairingPort, code)
+                val input = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_CODE)?.toString().orEmpty()
+                onInput(input)
             }
             else -> startDiscovery()
         }
@@ -40,30 +40,64 @@ class PairingService : Service() {
         ensureChannel(this)
         startForeground(
             NOTIFICATION_ID,
-            notification("Откройте «Беспроводная отладка» → «Сопряжение по коду»"),
+            notification("Откройте «Беспроводная отладка» → «Сопряжение по коду» и введите код из окна", withCodeInput = true),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         mdns?.stop()
         mdns = AdbMdns(this, AdbMdns.SERVICE_TYPE_TLS_PAIRING) { host, port ->
-            if (host == null || port <= 0) return@AdbMdns
-            pairingPort = port
-            notify("Найдено окно сопряжения. Введите код из него.", withCodeInput = true)
+            if (host != null && port > 0) pairingPort = port
         }.also { it.start() }
     }
 
-    private fun pair(port: Int, code: String) {
+    /** Код или «порт код» через пробел. Без порта ждём, пока его найдёт mDNS. */
+    private fun onInput(input: String) {
+        val numbers = Regex("\\d+").findAll(input).map { it.value }.toList()
+        val code = numbers.lastOrNull()
+        if (code == null) {
+            notify("Код не введён. Введите код из окна сопряжения", withCodeInput = true)
+            return
+        }
+        val typedPort = numbers.takeIf { it.size >= 2 }?.first()?.toIntOrNull()
         notify("Сопряжение…")
         thread(name = "adb-pairing") {
-            val message = runCatching {
-                AdbManager.get(this).pair(LOCALHOST, port, code)
-                PowerKeyController.setPaired(true)
-                "Сопряжение выполнено"
-            }.getOrElse { "Сопряжение не удалось: ${it.message}" }
-            mdns?.stop()
-            stopForeground(STOP_FOREGROUND_DETACH)
-            notify(message)
-            stopSelf()
+            val port = typedPort ?: waitForPort()
+            if (port == null) {
+                notify(
+                    "Не нашёл окно сопряжения. Введите порт и код через пробел, например 37123 123456. " +
+                        "Порт — число после двоеточия в строке «IP-адрес и порт».",
+                    withCodeInput = true,
+                )
+            } else {
+                pair(port, code)
+            }
         }
+    }
+
+    private fun waitForPort(): Int? {
+        val deadline = System.currentTimeMillis() + PORT_WAIT_MS
+        while (pairingPort == -1 && System.currentTimeMillis() < deadline) Thread.sleep(200)
+        return pairingPort.takeIf { it != -1 }
+    }
+
+    private fun pair(port: Int, code: String) {
+        val paired = runCatching { AdbManager.get(this).pair(LOCALHOST, port, code) }
+        if (paired.isFailure) {
+            // Например, неверный код: оставляем поле ввода, чтобы можно было сразу повторить.
+            notify("Сопряжение не удалось: ${paired.exceptionOrNull()?.message}. Проверьте код и порт", withCodeInput = true)
+            return
+        }
+        PowerKeyController.setPaired(true)
+        // Отладка сейчас включена пользователем, так что сразу и запускаем.
+        val message = if (!PowerKeyController.isEnabled) {
+            "Сопряжение выполнено"
+        } else {
+            runCatching { PowerKeyController.ensureRunning(this) }
+                .fold({ "Сопряжение выполнено, перехват кнопки запущен" }, { "Сопряжение выполнено, но запуск не удался: ${it.message}" })
+        }
+        mdns?.stop()
+        stopForeground(STOP_FOREGROUND_DETACH)
+        notify(message)
+        stopSelf()
     }
 
     private fun notify(text: String, withCodeInput: Boolean = false) =
@@ -74,6 +108,7 @@ class PairingService : Service() {
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("AIChanger: сопряжение")
             .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
             .setOnlyAlertOnce(!withCodeInput)
             .setContentIntent(openAppIntent(this))
         if (withCodeInput) {
@@ -81,7 +116,7 @@ class PairingService : Service() {
                 this, 0, Intent(this, PairingService::class.java).setAction(ACTION_CODE),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
-            val input = RemoteInput.Builder(KEY_CODE).setLabel("Код сопряжения").build()
+            val input = RemoteInput.Builder(KEY_CODE).setLabel("Код (или порт и код)").build()
             builder.addAction(Notification.Action.Builder(null, "Ввести код", reply).addRemoteInput(input).build())
         }
         return builder.build()
@@ -94,6 +129,7 @@ class PairingService : Service() {
 
     companion object {
         const val CHANNEL_ID = "aichanger"
+        private const val PORT_WAIT_MS = 5000L
         private const val NOTIFICATION_ID = 1
         private const val ACTION_CODE = "dev.dquest.aichanger.PAIRING_CODE"
         private const val KEY_CODE = "code"

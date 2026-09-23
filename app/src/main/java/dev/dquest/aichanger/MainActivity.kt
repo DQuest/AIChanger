@@ -2,9 +2,14 @@ package dev.dquest.aichanger
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.net.Uri
 import android.provider.Settings
 import android.util.TypedValue
 import android.widget.Button
@@ -17,28 +22,42 @@ import android.widget.TextView
 class MainActivity : Activity() {
 
     private lateinit var status: TextView
-    private lateinit var permissionButton: Button
+    private lateinit var pairButton: Button
     private lateinit var toggleButton: Button
+    private lateinit var autoStartButton: Button
     private lateinit var voiceButton: RadioButton
     private lateinit var windowButton: RadioButton
-    private lateinit var autoStatus: TextView
-    private lateinit var pairButton: Button
-    private lateinit var autoToggleButton: Button
-    private lateinit var startNowButton: Button
     private val onChange: () -> Unit = { runOnUiThread(::refresh) }
+    private val handler = Handler(Looper.getMainLooper())
+    private val poll = object : Runnable {
+        override fun run() {
+            PowerKeyController.refreshAsync()
+            handler.postDelayed(this, POLL_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val padding = dp(20)
         status = TextView(this).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f) }
-        permissionButton = Button(this).apply {
-            text = "Выдать доступ Shizuku"
-            setOnClickListener { PowerKeyController.requestPermission() }
+        pairButton = Button(this).apply {
+            text = "Сопряжение с беспроводной отладкой"
+            setOnClickListener { startPairing() }
         }
         toggleButton = Button(this).apply {
             setOnClickListener {
-                if (PowerKeyController.isEnabled) PowerKeyController.disable() else PowerKeyController.enable()
+                if (PowerKeyController.isEnabled) {
+                    PowerKeyController.disable(this@MainActivity)
+                } else {
+                    PowerKeyController.setEnabled(true)
+                    // Без сопряжения запускать нечем: сначала оно, а запуск произойдёт по его завершении.
+                    if (PowerKeyController.isPaired) AutoStartService.start(this@MainActivity) else startPairing()
+                }
             }
+        }
+        autoStartButton = Button(this).apply {
+            text = "Разрешить автозапуск (vivo)"
+            setOnClickListener { openAutoStartSettings() }
         }
         voiceButton = RadioButton(this).apply { text = "Сразу голосовой ввод" }
         windowButton = RadioButton(this).apply { text = "Окно Gemini без прослушивания" }
@@ -48,32 +67,22 @@ class MainActivity : Activity() {
             // Слушатель вешаем после добавления кнопок: id у них появляются только тогда.
             setOnCheckedChangeListener { _, checkedId -> PowerKeyController.setVoiceMode(checkedId == voiceButton.id) }
         }
-        autoStatus = TextView(this).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f) }
-        pairButton = Button(this).apply {
-            text = "Сопряжение с беспроводной отладкой"
-            setOnClickListener { startPairing() }
-        }
-        autoToggleButton = Button(this).apply {
-            setOnClickListener { PowerKeyController.setAutoStartEnabled(!PowerKeyController.isAutoStartEnabled) }
-        }
-        startNowButton = Button(this).apply {
-            text = "Запустить Shizuku сейчас"
-            setOnClickListener { AutoStartService.start(this@MainActivity) }
-        }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padding, padding, padding, padding)
             addView(title("Удержание кнопки питания → Gemini"))
             addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
-            addView(permissionButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
+            addView(pairButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
             addView(toggleButton, LinearLayout.LayoutParams(-1, -2))
+            addView(autoStartButton, LinearLayout.LayoutParams(-1, -2))
             addView(title("Что открывать"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding * 2 })
             addView(modeGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding / 2 })
-            addView(title("Автозапуск Shizuku"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding * 2 })
-            addView(autoStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
-            addView(pairButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
-            addView(autoToggleButton, LinearLayout.LayoutParams(-1, -2))
-            addView(startNowButton, LinearLayout.LayoutParams(-1, -2))
+            addView(TextView(this@MainActivity).apply {
+                text = "Меню питания: держите кнопку дольше, около 2 с.\n\n" +
+                    "Для запуска, в том числе после перезагрузки, нужен Wi-Fi, для которого в беспроводной " +
+                    "отладке разрешено «Всегда разрешать в этой сети». Чтобы перехват работал после перезагрузки, " +
+                    "включите AIChanger в списке автозапуска vivo (кнопка выше)."
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding * 2 })
         }
         setContentView(ScrollView(this).apply {
             fitsSystemWindows = true
@@ -99,6 +108,21 @@ class MainActivity : Activity() {
         )
     }
 
+    /** Без разрешения на автозапуск vivo отбрасывает загрузочную рассылку, и демон не стартует после перезагрузки. */
+    private fun openAutoStartSettings() {
+        val vivo = Intent().setComponent(ComponentName(VIVO_PERMISSION_MANAGER, VIVO_AUTOSTART_ACTIVITY))
+        try {
+            startActivity(vivo)
+        } catch (_: ActivityNotFoundException) {
+            openAppDetails()
+        } catch (_: SecurityException) {
+            openAppDetails()
+        }
+    }
+
+    private fun openAppDetails() =
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startPairing()
     }
@@ -107,42 +131,45 @@ class MainActivity : Activity() {
         super.onStart()
         PowerKeyController.addListener(onChange)
         refresh()
+        PowerKeyController.startIfNeeded(applicationContext)
+        handler.post(poll)
     }
 
     override fun onStop() {
+        handler.removeCallbacks(poll)
         PowerKeyController.removeListener(onChange)
         super.onStop()
     }
 
     private fun refresh() {
-        val shizuku = PowerKeyController.isShizukuRunning()
-        val permission = PowerKeyController.hasPermission()
-        val service = PowerKeyController.service
-        val running = service?.let { runCatching { it.isRunning }.getOrDefault(false) } ?: false
+        val enabled = PowerKeyController.isEnabled
+        val paired = PowerKeyController.isPaired
+        val version = PowerKeyController.daemonVersion
         status.text = buildString {
-            append("Shizuku: ${if (shizuku) "запущен" else "не запущен — запустите его"}\n")
-            append("Доступ Shizuku: ${if (permission) "есть" else "нет"}\n")
-            append("Перехват кнопки: ${if (running) "работает" else "не работает"}")
-            service?.let { runCatching { it.status() }.getOrNull() }?.let { append("\n\n$it") }
+            append("Сопряжение: ${if (paired) "выполнено" else "нет"}\n")
+            append("Перехват кнопки: ")
+            append(
+                when {
+                    version == BuildConfig.VERSION_CODE -> "работает"
+                    PowerKeyController.launching -> "запускается…"
+                    version != null -> "работает старая версия, обновляется"
+                    !enabled -> "выключен"
+                    !paired -> "ждёт сопряжения"
+                    else -> "не запущен" + (PowerKeyController.lastLaunchError?.let { ": $it" } ?: "")
+                }
+            )
+            PowerKeyController.daemonStatus?.let { append("\n\n$it") }
         }
-        permissionButton.isEnabled = shizuku && !permission
-        toggleButton.isEnabled = permission || PowerKeyController.isEnabled
-        toggleButton.text = if (PowerKeyController.isEnabled) "Выключить (вернуть BlueLM)" else "Включить"
+        toggleButton.text = if (enabled) "Выключить (вернуть BlueLM)" else "Включить"
         val selected = if (PowerKeyController.isVoiceMode) voiceButton else windowButton
         if (!selected.isChecked) selected.isChecked = true
-
-        val secureSettings = ShizukuStarter.canWriteSecureSettings(this)
-        val paired = PowerKeyController.isPaired
-        autoStatus.text = buildString {
-            append("WRITE_SECURE_SETTINGS: ${if (secureSettings) "выдано" else "нет — выдайте по adb (см. README)"}\n")
-            append("Сопряжение: ${if (paired) "выполнено" else "нет"}\n")
-            append("Автозапуск после перезагрузки: ${if (PowerKeyController.isAutoStartEnabled) "включён" else "выключен"}\n")
-            append("Нужен Wi-Fi, для которого разрешена беспроводная отладка («Всегда разрешать в этой сети»).")
-        }
-        autoToggleButton.isEnabled = secureSettings && paired
-        autoToggleButton.text = if (PowerKeyController.isAutoStartEnabled) "Выключить автозапуск" else "Включить автозапуск"
-        startNowButton.isEnabled = secureSettings && paired && !shizuku
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        const val POLL_MS = 2000L
+        const val VIVO_PERMISSION_MANAGER = "com.vivo.permissionmanager"
+        const val VIVO_AUTOSTART_ACTIVITY = "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
+    }
 }

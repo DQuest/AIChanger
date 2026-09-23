@@ -8,14 +8,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Выдаётся по adb: pm grant dev.dquest.aichanger android.permission.WRITE_SECURE_SETTINGS -->
+    <!-- Приложение выдаёт его себе само через свой adb при первом запуске (pm grant). -->
     <uses-permission
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
-
-    <queries>
-        <package android:name="moe.shizuku.privileged.api" />
-    </queries>
 
     <application
         android:name=".App"
@@ -33,7 +29,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Запуск процесса после загрузки: сервер Shizuku, если уже работает, сам передаёт binder. -->
+        <!-- Запуск демона после загрузки (ещё до первой разблокировки) и после обновления. -->
         <receiver
             android:name=".BootReceiver"
             android:directBootAware="true"
@@ -41,6 +37,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
@@ -51,7 +48,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Запуск Shizuku через беспроводную отладку после загрузки" />
+                android:value="Запуск демона кнопки питания через беспроводную отладку после загрузки" />
         </service>
 
         <service
@@ -62,15 +59,5 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Сопряжение с беспроводной отладкой" />
         </service>
-
-        <!-- Через него Shizuku передаёт приложению binder, в том числе при своём запуске. -->
-        <provider
-            android:name="rikka.shizuku.ShizukuProvider"
-            android:directBootAware="true"
-            android:authorities="${applicationId}.shizuku"
-            android:enabled="true"
-            android:exported="true"
-            android:multiprocess="false"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>
