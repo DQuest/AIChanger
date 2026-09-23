@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-AIChanger: удержание кнопки питания на vivo X200 Ultra (OriginOS 6, Android 16, без root) открывает Gemini вместо BlueLM.
+AIChanger: удержание кнопки питания на телефонах vivo с OriginOS 6 (Android 16, без root) открывает Gemini вместо BlueLM.
 Пользовательское описание и настройка: [README.md](README.md).
 
 ## Сборка и установка
@@ -44,7 +44,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Демон переживает удаление приложения (uid shell), поэтому сам возвращает BlueLM и завершается (`watchForUninstall`).
   То же при команде `stop`.
 
-## Особенности прошивки vivo
+## Особенности OriginOS
 
 - `settings put` для нужных ключей молча не работает. Писать через
   `content insert --uri content://settings/<ns> --bind name:s:K --bind value:s:V`.
@@ -58,7 +58,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Номер `/dev/input/eventN` у `pmic_pwrkey` меняется между загрузками, устройство ищется по имени.
 - Доверенные сети беспроводной отладки хранятся по BSSID. После загрузки подключение иногда не находит порт по mDNS,
   поэтому `DaemonLauncher` перезапускает беспроводную отладку перед повторными попытками.
-- USB-отладка на этой прошивке продолжает работать и при выключенных параметрах разработчика.
+- USB-отладка в OriginOS продолжает работать и при выключенных параметрах разработчика.
 
 ## Отладка
 

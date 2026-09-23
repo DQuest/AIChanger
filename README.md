@@ -1,6 +1,6 @@
 # AIChanger
 
-Удержание кнопки питания вызывает **Gemini** вместо BlueLM на vivo X200 Ultra (OriginOS 6, Android 16, без root).
+Удержание кнопки питания вызывает **Gemini** вместо BlueLM на телефонах vivo с OriginOS 6 (Android 16, без root).
 Ставится одно приложение. Shizuku и компьютер не нужны.
 
 ## Как это работает
@@ -68,7 +68,7 @@ vivo просит подтвердить установку по adb на экр
 adb shell content insert --uri content://settings/system --bind name:s:vivo_jovi_power_wakeup_switch --bind value:s:1
 ```
 
-Исходные значения сохранены в `backup.txt`. Замечание: на этой прошивке `settings put` для этих ключей молча
+Исходные значения сохранены в `backup.txt`. Замечание: в OriginOS `settings put` для этих ключей молча
 не срабатывает, записывать нужно через `content insert`.
 
 ## Прочее
