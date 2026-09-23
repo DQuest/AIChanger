@@ -1,0 +1,63 @@
+name: Сборка APK
+
+# Debug-APK на каждый push в любую ветку и на pull request; вручную — кнопкой Run workflow во вкладке Actions.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# Новый push в ту же ветку отменяет сборку предыдущего: нужен только последний APK.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Gradle 9 и AGP 9 требуют JDK 17+. Android SDK на ubuntu-latest уже есть,
+      # недостающую платформу (compileSdk) AGP докачает сам: лицензии на раннере приняты.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Кэш зависимостей и сборки Gradle между запусками, заодно проверка gradle-wrapper.jar.
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Debug-сборки подписываются ключом ~/.android/debug.keystore, а на раннере он каждый раз новый.
+      # APK с другой подписью Android не поставит поверх уже установленного (придётся удалять приложение
+      # вместе с сопряжением). Если в секретах репозитория есть DEBUG_KEYSTORE_BASE64 — тот же ключ,
+      # что на компьютере разработчика, — CI-сборки ставятся поверх локальных и наоборот.
+      - name: Debug-ключ из секретов
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
+            mkdir -p ~/.android
+            echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
+            echo "Используется debug-ключ из секретов"
+          else
+            echo "Секрета DEBUG_KEYSTORE_BASE64 нет: APK подписан случайным ключом раннера"
+          fi
+
+      - name: Сборка
+        run: ./gradlew :app:assembleDebug
+
+      - name: Версия для имени артефакта
+        id: version
+        run: echo "name=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AIChanger-${{ steps.version.outputs.name }}-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

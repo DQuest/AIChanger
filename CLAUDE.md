@@ -13,6 +13,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 - vivo требует подтвердить установку по adb на экране: телефон должен быть разблокирован, иначе `INSTALL_FAILED_ABORTED: User rejected permissions`.
 - Тестов нет, проверка только на устройстве (см. «Отладка»).
+- CI: `.github/workflows/build.yml` собирает `assembleDebug` на каждый push и PR, APK — в артефактах запуска.
+  Секрет `DEBUG_KEYSTORE_BASE64` — debug-ключ разработчика, чтобы APK из CI ставился поверх локальной сборки.
 - Сборка только под `arm64-v8a` (нативные библиотеки conscrypt под другие ABI не нужны), minSdk 30, targetSdk 36.
 
 ## Архитектура
