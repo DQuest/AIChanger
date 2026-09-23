@@ -9,4 +9,6 @@ interface IPowerKeyService {
     boolean isRunning() = 3;
     String status() = 4;
     void setBlueLmOnPowerKey(boolean enabled) = 5;
+    // true: Gemini сразу слушает (KEYCODE_VOICE_ASSIST), false: обычная панель (KEYCODE_ASSIST).
+    void setVoiceMode(boolean voice) = 6;
 }

@@ -14,8 +14,8 @@ import kotlin.system.exitProcess
  * Shizuku UserService: работает в отдельном процессе с uid shell.
  *
  * Читает сырые события кнопки питания (`pmic_pwrkey`) из /dev/input. При удержании
- * дольше порога закрывает меню питания vivo и отправляет KEYCODE_ASSIST, который
- * PhoneWindowManager передаёт системному ассистенту (Gemini).
+ * дольше порога закрывает меню питания vivo и отправляет KEYCODE_VOICE_ASSIST или KEYCODE_ASSIST,
+ * которые PhoneWindowManager передаёт системному ассистенту (Gemini): сразу с голосовым вводом или без.
  */
 class PowerKeyService : IPowerKeyService.Stub() {
 
@@ -23,6 +23,7 @@ class PowerKeyService : IPowerKeyService.Stub() {
     private var pendingFire: ScheduledFuture<*>? = null
 
     @Volatile private var holdMs = Config.DEFAULT_HOLD_MS
+    @Volatile private var voiceMode = true
     @Volatile private var active = false
     @Volatile private var reader: Thread? = null
     @Volatile private var device: String? = null
@@ -51,6 +52,7 @@ class PowerKeyService : IPowerKeyService.Stub() {
     override fun status(): String = buildString {
         append("Устройство: ${device ?: "—"}\n")
         append("Порог удержания: $holdMs мс\n")
+        append("Режим: ${if (voiceMode) "голосовой ввод" else "окно без прослушивания"}\n")
         append("Вызовов Gemini: $fired\n")
         append("BlueLM на кнопке: ${if (sh(GET_BLUELM_SWITCH).trim() == "1") "включён" else "выключен"}")
         lastError?.let { append("\nОшибка: $it") }
@@ -62,6 +64,10 @@ class PowerKeyService : IPowerKeyService.Stub() {
             "content insert --uri content://settings/system " +
                 "--bind name:s:$BLUELM_SWITCH --bind value:s:${if (enabled) 1 else 0}"
         )
+    }
+
+    override fun setVoiceMode(voice: Boolean) {
+        voiceMode = voice
     }
 
     override fun destroy() {
@@ -112,7 +118,7 @@ class PowerKeyService : IPowerKeyService.Stub() {
         if (isKeyguardShowing()) {
             // Любая другая клавиша, нажатая пока питание зажато, помечает нажатие питания обработанным.
             // Без этого отпускание кнопки сработает как короткое нажатие и погасит экран.
-            // На разблокированном экране эту роль играет сам KEYCODE_ASSIST.
+            // На разблокированном экране эту роль играет сама клавиша вызова ассистента.
             sh("input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard")
             if (!waitForUnlock()) return
             Thread.sleep(UNLOCK_SETTLE_MS)
@@ -120,7 +126,7 @@ class PowerKeyService : IPowerKeyService.Stub() {
         // Сразу после первой разблокировки Google-приложение ещё поднимается, и панель Gemini
         // может закрыться сама (мелькнёт только рамка). Тогда вызываем ещё раз.
         repeat(ASSIST_ATTEMPTS) {
-            sh("input keyevent KEYCODE_ASSIST")
+            sh("input keyevent ${if (voiceMode) "KEYCODE_VOICE_ASSIST" else "KEYCODE_ASSIST"}")
             if (waitForGemini()) {
                 fired++
                 return

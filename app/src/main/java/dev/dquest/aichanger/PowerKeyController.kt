@@ -21,6 +21,7 @@ object PowerKeyController {
     private const val KEY_ENABLED = "enabled"
     private const val KEY_AUTOSTART = "autostart"
     private const val KEY_PAIRED = "paired"
+    private const val KEY_VOICE = "voice"
 
     @Volatile var service: IPowerKeyService? = null
         private set
@@ -41,7 +42,7 @@ object PowerKeyController {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val connected = IPowerKeyService.Stub.asInterface(binder)
             service = connected
-            if (isEnabled) runCatching { connected.start(Config.DEFAULT_HOLD_MS) }.onFailure { Log.w(TAG, it) }
+            if (isEnabled) runCatching { configure(connected) }.onFailure { Log.w(TAG, it) }
             notifyListeners()
         }
 
@@ -83,6 +84,15 @@ object PowerKeyController {
         notifyListeners()
     }
 
+    /** По умолчанию Gemini сразу слушает, как при удержании кнопки на Samsung. */
+    val isVoiceMode: Boolean get() = prefs.getBoolean(KEY_VOICE, true)
+
+    fun setVoiceMode(value: Boolean) {
+        prefs.edit().putBoolean(KEY_VOICE, value).apply()
+        service?.let { runCatching { it.setVoiceMode(value) }.onFailure { e -> Log.w(TAG, e) } }
+        notifyListeners()
+    }
+
     val isPaired: Boolean get() = prefs.getBoolean(KEY_PAIRED, false)
 
     fun setPaired(value: Boolean) {
@@ -99,8 +109,13 @@ object PowerKeyController {
     fun enable() {
         setEnabled(true)
         val current = service
-        if (current != null) current.start(Config.DEFAULT_HOLD_MS) else bind()
+        if (current != null) configure(current) else bind()
         notifyListeners()
+    }
+
+    private fun configure(service: IPowerKeyService) {
+        service.setVoiceMode(isVoiceMode)
+        service.start(Config.DEFAULT_HOLD_MS)
     }
 
     /** Останавливает службу и возвращает BlueLM на кнопку питания. */

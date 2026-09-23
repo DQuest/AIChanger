@@ -9,6 +9,8 @@ import android.provider.Settings
 import android.util.TypedValue
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 
@@ -17,6 +19,8 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var permissionButton: Button
     private lateinit var toggleButton: Button
+    private lateinit var voiceButton: RadioButton
+    private lateinit var windowButton: RadioButton
     private lateinit var autoStatus: TextView
     private lateinit var pairButton: Button
     private lateinit var autoToggleButton: Button
@@ -35,6 +39,14 @@ class MainActivity : Activity() {
             setOnClickListener {
                 if (PowerKeyController.isEnabled) PowerKeyController.disable() else PowerKeyController.enable()
             }
+        }
+        voiceButton = RadioButton(this).apply { text = "Сразу голосовой ввод" }
+        windowButton = RadioButton(this).apply { text = "Окно Gemini без прослушивания" }
+        val modeGroup = RadioGroup(this).apply {
+            addView(voiceButton)
+            addView(windowButton)
+            // Слушатель вешаем после добавления кнопок: id у них появляются только тогда.
+            setOnCheckedChangeListener { _, checkedId -> PowerKeyController.setVoiceMode(checkedId == voiceButton.id) }
         }
         autoStatus = TextView(this).apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f) }
         pairButton = Button(this).apply {
@@ -55,6 +67,8 @@ class MainActivity : Activity() {
             addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
             addView(permissionButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
             addView(toggleButton, LinearLayout.LayoutParams(-1, -2))
+            addView(title("Что открывать"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding * 2 })
+            addView(modeGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding / 2 })
             addView(title("Автозапуск Shizuku"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding * 2 })
             addView(autoStatus, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
             addView(pairButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
@@ -114,6 +128,8 @@ class MainActivity : Activity() {
         permissionButton.isEnabled = shizuku && !permission
         toggleButton.isEnabled = permission || PowerKeyController.isEnabled
         toggleButton.text = if (PowerKeyController.isEnabled) "Выключить (вернуть BlueLM)" else "Включить"
+        val selected = if (PowerKeyController.isVoiceMode) voiceButton else windowButton
+        if (!selected.isChecked) selected.isChecked = true
 
         val secureSettings = ShizukuStarter.canWriteSecureSettings(this)
         val paired = PowerKeyController.isPaired
