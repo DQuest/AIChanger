@@ -80,9 +80,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - ChatGPT: `AssistantProxyActivity` при прямом запуске сразу закрывается, работает только как системный ассистент.
   Claude, Perplexity и Алиса при прямом запуске открывают свою панель и сразу слушают.
 - USB-отладка в OriginOS продолжает работать и при выключенных параметрах разработчика.
-- Кроме кнопки питания, ассистента на OriginOS ничто не вызывает: удержание нижнего бара или «Домой» — только BlueLM
-  (`global system_navigation_wake_up_switch`), без него ничего не происходит, даже с `secure assist_long_press_home_enabled=1`
-  и `assist_touch_gesture_enabled=1`. Поэтому роль системного ассистента нужна только ChatGPT.
+- Нижний бар рисует лаунчер vivo (`com.bbk.launcher2`, окно `Taskbar`), а не SystemUI, поэтому `LONG_PRESS_HOME_ASSIST`
+  из политики окон не срабатывает. Удержание «Домой» лаунчер обрабатывает сам (`db.p0.p` в его коде): на глобальной прошивке
+  (`ro.vivo.product.overseas` не `no`) вызывает системного ассистента (`startAssistant`, `invocation_type=5`) или Circle to Search,
+  на китайской — только BlueLM (`global system_navigation_wake_up_switch`), без него ничего. Поэтому на китайской OriginOS
+  ассистента вызывает только кнопка питания, и роль системного ассистента нужна только ChatGPT. На глобальной смена роли
+  перенесла бы выбор и на «Домой» (не проверено).
 - Claude в роли системного ассистента на `KEYCODE_ASSIST` ничего не показывает (служба привязана), только прямой запуск.
   ChatGPT, Perplexity и Алиса в роли открывают свою панель.
 
