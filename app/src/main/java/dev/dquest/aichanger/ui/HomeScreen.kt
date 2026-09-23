@@ -109,7 +109,8 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                         state.waitingForWifi -> (if (state.wifiEnabled) "Ждёт Wi-Fi" else "Wi-Fi выключен") to
                             "Перехват запустится сам, как только телефон подключится к Wi-Fi, в котором настраивали AIChanger"
                         state.launching -> "Запускается…" to "Это займёт несколько секунд"
-                        !state.enabled -> "Выключено" to "Кнопка питания работает как обычно"
+                        !state.enabled -> "Выключено" to
+                            "Кнопка питания не перехватывается. BlueLM, если нужен, включите в настройках телефона"
                         error != null -> "Не запустилось" to friendlyError(error)
                         else -> "Не запущено" to "Запустится через пару секунд"
                     }

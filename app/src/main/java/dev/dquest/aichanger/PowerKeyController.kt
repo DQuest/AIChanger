@@ -153,7 +153,7 @@ object PowerKeyController {
         }
     }
 
-    /** Останавливает демон; он сам возвращает BlueLM на кнопку питания и прежнего системного ассистента. */
+    /** Останавливает демон; он сам возвращает прежнего системного ассистента. BlueLM пользователь включает сам. */
     fun disable(context: Context) {
         setEnabled(false)
         val appContext = context.applicationContext

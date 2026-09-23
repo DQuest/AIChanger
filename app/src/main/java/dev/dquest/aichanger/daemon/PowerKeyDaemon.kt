@@ -55,7 +55,7 @@ object PowerKeyDaemon {
             val client = try {
                 server.accept()
             } catch (e: IOException) {
-                // Например, кончились дескрипторы: падать из-за этого нельзя, BlueLM остался бы выключенным.
+                // Например, кончились дескрипторы: падать из-за этого нельзя, кнопка осталась бы без ассистента.
                 Log.w(TAG, "daemon: accept failed: $e")
                 Thread.sleep(ACCEPT_RETRY_MS)
                 continue
@@ -70,7 +70,7 @@ object PowerKeyDaemon {
 
     /**
      * Под app_process необработанное исключение в любом потоке завершает весь процесс (RuntimeInit ставит
-     * KillApplicationHandler), и BlueLM остался бы выключенным, а кнопка — без ассистента. Поэтому ошибки
+     * KillApplicationHandler), и кнопка осталась бы без ассистента, пока не откроют приложение. Поэтому ошибки
      * клиента (молчит до таймаута, оборвал соединение) только пишем в лог.
      */
     private fun serve(client: Socket, token: String, engine: PowerKeyEngine) {
@@ -141,7 +141,7 @@ object PowerKeyDaemon {
 
     /**
      * Демон работает с uid shell, и удаление приложения его не убивает. Без этой проверки кнопка
-     * продолжала бы вызывать ассистента, а BlueLM так и остался бы выключенным даже после перезагрузки.
+     * продолжала бы вызывать ассистента до перезагрузки, а системным остался бы выбранный в приложении ассистент.
      * При обновлении APK тоже пропадает, но пакет остаётся: тогда приложение само перезапустит демон.
      */
     private fun watchForUninstall(engine: PowerKeyEngine) {
@@ -156,10 +156,9 @@ object PowerKeyDaemon {
         }
     }
 
-    /** Останавливает перехват и возвращает всё, что демон менял: BlueLM на кнопке и системного ассистента. */
+    /** Останавливает перехват и возвращает то, что демон менял: системного ассистента. BlueLM включает сам пользователь. */
     private fun restoreSystem(engine: PowerKeyEngine) {
         engine.stop()
-        engine.setBlueLmOnPowerKey(true)
         engine.restoreAssistantRole()
     }
 

@@ -22,7 +22,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Приложение** (`dev.dquest.aichanger`): UI, сопряжение, запуск демона.
   - `MainActivity`: реализует `ui.UiActions` (сопряжение, автозапуск, выбор ассистента) и показывает экраны из `ui/`
     на Jetpack Compose + Material 3: `SetupWizard` (первая настройка, пока нет сопряжения или не пройден шаг
-    автозапуска, `setup_done`) и `HomeScreen` (карточки). `UiState` — снимок `PowerKeyController`, перечитывается по счётчику.
+    автозапуска, `setup_done`; первый шаг — пользователь сам выключает BlueLM на кнопке) и `HomeScreen` (карточки). `UiState` — снимок `PowerKeyController`, перечитывается по счётчику.
   - `PairingService`: сопряжение с беспроводной отладкой, код вводится в уведомлении (RemoteInput).
   - `AdbManager`: ключ и сертификат adb-клиента на libadb-android, хранятся в Device Protected storage.
   - `DaemonLauncher`: включает беспроводную отладку (и при необходимости параметры разработчика), подключается к своему adbd,
@@ -48,14 +48,16 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   (`DaemonProtocol.isValidTarget`/`isValidRestore`) и передаёт в команды только через `exec(listOf(...))`, не через `sh`.
   Токен новый при каждом запуске демона (`PowerKeyController.newToken`).
 - Необработанное исключение в любом потоке демона убивает весь процесс (`app_process` ставит `KillApplicationHandler`),
-  и BlueLM остаётся выключенным. Код в потоках демона ловит всё сам.
+  и кнопка остаётся без ассистента. Код в потоках демона ловит всё сам.
 - Запуск (`ensureRunning`) и остановка (`stopDaemon`) идут под одним локом `PowerKeyController`: остановка службы
   не прерывает её поток, а `AdbManager` общий.
 - Всё, что нужно до первой разблокировки, должно быть `directBootAware` **на каждом компоненте** (флаг у `<application>`
   на компоненты не распространяется) и хранить данные в `createDeviceProtectedStorageContext()`.
 - Команда запуска демона через libadb должна заканчиваться `& sleep 1`: `shell:` идёт через PTY, и без паузы фоновый
   процесс гибнет от hangup раньше, чем `setsid` его отвяжет. В конце потока libadb бросает «Stream closed» вместо -1.
-- Демон переживает удаление приложения (uid shell), поэтому сам возвращает BlueLM и прежнего системного ассистента
+- BlueLM приложение не трогает ни при запуске, ни при выключении: вызов BlueLM кнопкой питания пользователь
+  выключает и включает сам (первый шаг `SetupWizard`).
+- Демон переживает удаление приложения (uid shell), поэтому сам возвращает прежнего системного ассистента
   и завершается (`watchForUninstall`). То же при команде `stop`. Кого вернуть, приложение хранит в настройках
   (`restore_role`) и передаёт демону командой `assistant` после каждого запуска.
 - Настройки отладки, которые включило приложение, отмечаются в `launcher_marks`: если процесс убьют посреди запуска
@@ -65,7 +67,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 - `settings put` для нужных ключей молча не работает. Писать через
   `content insert --uri content://settings/<ns> --bind name:s:K --bind value:s:V`.
-- BlueLM на кнопке выключается `system vivo_jovi_power_wakeup_switch=0`, включается `=1`. `global power_button_long_press` прошивка игнорирует.
+- BlueLM на кнопке выключается `system vivo_jovi_power_wakeup_switch=0`, включается `=1` (приложение этот ключ не трогает).
+  `global power_button_long_press` прошивка игнорирует.
 - Экран блокировки vivo не пропускает панель Gemini (видна только подсветка): сначала `wm dismiss-keyguard`, затем ASSIST.
 - Любая инжектированная клавиша во время удержания питания помечает нажатие обработанным, иначе отпускание гасит экран
   (на экране блокировки для этого шлётся `KEYCODE_WAKEUP`).

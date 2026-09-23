@@ -72,13 +72,12 @@ object DaemonLauncher {
     }
 
     /**
-     * Возвращает BlueLM на кнопку и прежнего системного ассистента, когда демон не ответил на `stop`.
+     * Возвращает прежнего системного ассистента, когда демон не ответил на `stop`.
      * Демон при этом мог и работать, но не принять токен, поэтому сначала его завершаем.
      */
     fun restoreSystem(context: Context, restoreRole: String?) {
         withWirelessAdb(context) { adb ->
             shell(adb, killCommand(context))
-            shell(adb, DaemonProtocol.blueLmCommand(true))
             // Строку собирает оболочка adb, поэтому пропускаем только имя пакета.
             restoreRole?.takeIf(DaemonProtocol::isValidRestore)?.let {
                 shell(adb, DaemonProtocol.assistantRoleArgs(it).joinToString(" "))

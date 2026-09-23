@@ -24,7 +24,7 @@ object Assistants {
     /**
      * Ассистенты, которые открываются поверх экрана: признак — своя служба голосового ассистента
      * (VoiceInteractionService). Приложения без неё, например DeepSeek, открылись бы целиком, их не берём.
-     * BlueLM (пакеты vivo) не показываем: его и заменяем, а вернуть его можно выключением перехвата.
+     * BlueLM (пакеты vivo) не показываем: его и заменяем.
      */
     fun find(context: Context): List<Assistant> {
         val pm = context.packageManager

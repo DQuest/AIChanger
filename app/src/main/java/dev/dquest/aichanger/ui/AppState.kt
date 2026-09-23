@@ -54,6 +54,7 @@ data class AssistantItem(val assistant: Assistant, val icon: ImageBitmap?)
 
 /** Что экран просит сделать; реализует MainActivity. */
 interface UiActions {
+    fun openSettings()
     fun openDeviceInfo()
     fun startPairing()
     fun openAutoStart()

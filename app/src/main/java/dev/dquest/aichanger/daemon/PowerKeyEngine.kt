@@ -65,13 +65,8 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         append("Порог удержания: $holdMs мс, меню питания: $powerMenuMs мс\n")
         append("Ассистент: $assistant\n")
         if (isGemini(assistant)) append("Режим: ${if (voiceMode) "голосовой ввод" else "окно без прослушивания"}\n")
-        append("Вызовов ассистента: $fired\n")
-        append("BlueLM на кнопке: ${if (sh(GET_BLUELM_SWITCH).trim() == "1") "включён" else "выключен"}")
+        append("Вызовов ассистента: $fired")
         lastError?.let { append("\nОшибка: $it") }
-    }
-
-    fun setBlueLmOnPowerKey(enabled: Boolean) {
-        sh(DaemonProtocol.blueLmCommand(enabled))
     }
 
     /**
@@ -105,7 +100,6 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
     }
 
     private fun readLoop() {
-        setBlueLmOnPowerKey(false)
         while (active) {
             try {
                 val dev = findPowerDevice() ?: error("устройство pmic_pwrkey не найдено")
@@ -252,7 +246,6 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
 
     private companion object {
         const val POWER_DEVICE_NAME = "pmic_pwrkey"
-        const val GET_BLUELM_SWITCH = "settings get system vivo_jovi_power_wakeup_switch"
         const val INPUT_EVENT_SIZE = 24
         const val EV_KEY = 1
         const val KEY_POWER = 116
