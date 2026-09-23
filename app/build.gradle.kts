@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -10,8 +11,8 @@ android {
         applicationId = "dev.dquest.aichanger"
         minSdk = 30
         targetSdk = 36
-        versionCode = 22
-        versionName = "3.0"
+        versionCode = 23
+        versionName = "3.1"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -20,6 +21,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 }
 
@@ -28,4 +30,8 @@ dependencies {
     implementation(libs.libadb.android)
     implementation(libs.conscrypt.android)
     implementation(libs.bouncycastle.pkix)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.activity.compose)
 }

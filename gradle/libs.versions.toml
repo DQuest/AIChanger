@@ -4,6 +4,9 @@ coreKtx = "1.19.0"
 libadb = "3.1.1"
 conscrypt = "2.5.3"
 bouncycastle = "1.81"
+kotlin = "2.4.10"
+composeBom = "2026.08.00"
+activityCompose = "1.13.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -12,5 +15,11 @@ conscrypt-android = { group = "org.conscrypt", name = "conscrypt-android", versi
 # Та же линейка Bouncy Castle, что тянет libadb-android (bcprov-jdk15to18), иначе будут дубли классов.
 bouncycastle-pkix = { group = "org.bouncycastle", name = "bcpkix-jdk15to18", version.ref = "bouncycastle" }
 
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

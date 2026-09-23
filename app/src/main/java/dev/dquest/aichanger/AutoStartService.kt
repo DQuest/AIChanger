@@ -34,7 +34,7 @@ class AutoStartService : Service() {
 
     private fun notification(text: String): Notification =
         Notification.Builder(this, PairingService.CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("AIChanger")
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))

@@ -16,6 +16,7 @@ object PowerKeyController {
     private const val KEY_TOKEN = "token"
     private const val KEY_ASSISTANT = "assistant"
     private const val KEY_RESTORE_ROLE = "restore_role"
+    private const val KEY_SETUP_DONE = "setup_done"
 
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
     private val background = Executors.newSingleThreadExecutor()
@@ -48,6 +49,14 @@ object PowerKeyController {
     val isVoiceMode: Boolean get() = prefs.getBoolean(KEY_VOICE, true)
 
     val isPaired: Boolean get() = prefs.getBoolean(KEY_PAIRED, false)
+
+    /** Пройден ли мастер первой настройки (последний шаг — автозапуск vivo — проверить нельзя). */
+    val isSetupDone: Boolean get() = prefs.getBoolean(KEY_SETUP_DONE, false)
+
+    fun setSetupDone(value: Boolean) {
+        prefs.edit().putBoolean(KEY_SETUP_DONE, value).apply()
+        notifyListeners()
+    }
 
     /** Кого вызывать, в формате [DaemonProtocol.ASSISTANT]. */
     val assistant: String get() = prefs.getString(KEY_ASSISTANT, null) ?: Assistants.GEMINI.target

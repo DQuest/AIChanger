@@ -21,14 +21,16 @@
         <intent>
             <action android:name="android.intent.action.ASSIST" />
         </intent>
+        <!-- Иконка Gemini для списка: вызывается он через Google, а узнают его по своему приложению. -->
+        <package android:name="com.google.android.apps.bard" />
     </queries>
 
     <application
         android:name=".App"
         android:directBootAware="true"
-        android:icon="@android:drawable/ic_btn_speak_now"
+        android:icon="@mipmap/ic_launcher"
         android:label="AIChanger"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:theme="@style/Theme.AIChanger">
 
         <activity
             android:name=".MainActivity"
