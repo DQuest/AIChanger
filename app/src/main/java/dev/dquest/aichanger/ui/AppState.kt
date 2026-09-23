@@ -57,6 +57,7 @@ interface UiActions {
     fun openDeviceInfo()
     fun startPairing()
     fun openAutoStart()
+    fun openBackgroundPower()
     fun openWifi()
     fun finishSetup()
     fun restartSetup()

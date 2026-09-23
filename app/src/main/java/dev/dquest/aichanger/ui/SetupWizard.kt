@@ -36,13 +36,15 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Первая настройка по шагам. Шаги 1 и 2 отмечаются сами (параметры разработчика включены, сопряжение
- * прошло), третий — автозапуск vivo — проверить нельзя, его подтверждает пользователь.
+ * прошло). Настройки vivo на шагах 3 и 4 (автозапуск и работа в фоне) приложению не видны, их подтверждает пользователь.
  */
 @Composable
 fun SetupWizard(state: UiState, actions: UiActions) {
     var skipDeveloperStep by rememberSaveable { mutableStateOf(false) }
     var pairingStarted by rememberSaveable { mutableStateOf(false) }
+    var autoStartDone by rememberSaveable { mutableStateOf(false) }
     val step = when {
+        state.paired && autoStartDone -> 4
         state.paired -> 3
         state.developerOptions || skipDeveloperStep -> 2
         else -> 1
@@ -94,11 +96,18 @@ fun SetupWizard(state: UiState, actions: UiActions) {
                     Hint("Нужен Wi-Fi. Код вводится один раз, дальше AIChanger подключается сам.")
                     if (pairingStarted) Waiting("Ждём код сопряжения из уведомления…")
                 }
-                else -> Step(
+                3 -> Step(
                     title = "Разрешите автозапуск",
                     body = "Тогда кнопка будет работать и после перезагрузки телефона. " +
                         "Найдите AIChanger в списке и включите переключатель.",
                     primary = "Открыть автозапуск" to actions::openAutoStart,
+                    secondary = "Готово" to { autoStartDone = true },
+                )
+                else -> Step(
+                    title = "Разрешите работу в фоне",
+                    body = "Иначе vivo усыпит AIChanger, пока он ждёт Wi-Fi после перезагрузки, и кнопка не заработает. " +
+                        "Нажмите на AIChanger в списке и выберите «Разрешить высокое энергопотребление».",
+                    primary = "Открыть управление питанием" to actions::openBackgroundPower,
                     secondary = "Готово" to actions::finishSetup,
                 )
             }
@@ -187,4 +196,4 @@ private fun Waiting(text: String) {
     }
 }
 
-private const val STEPS = 3
+private const val STEPS = 4

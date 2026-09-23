@@ -11,8 +11,8 @@ android {
         applicationId = "dev.dquest.aichanger"
         minSdk = 30
         targetSdk = 36
-        versionCode = 25
-        versionName = "3.3"
+        versionCode = 26
+        versionName = "3.4"
 
         ndk {
             abiFilters += "arm64-v8a"

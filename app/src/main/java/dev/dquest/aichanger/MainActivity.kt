@@ -107,10 +107,17 @@ class MainActivity : ComponentActivity(), UiActions {
     }
 
     /** Без разрешения на автозапуск vivo отбрасывает загрузочную рассылку, и демон не стартует после перезагрузки. */
-    override fun openAutoStart() {
-        val vivo = Intent().setComponent(ComponentName(VIVO_PERMISSION_MANAGER, VIVO_AUTOSTART_ACTIVITY))
+    override fun openAutoStart() = openVivoSettings(VIVO_PERMISSION_MANAGER, VIVO_AUTOSTART_ACTIVITY)
+
+    /**
+     * vivo замораживает фоновые приложения через секунды после ухода с экрана, даже с foreground-службой, и тогда
+     * AIChanger не узнаёт, что появился Wi-Fi. Не замораживает тех, кому разрешено высокое энергопотребление в фоне.
+     */
+    override fun openBackgroundPower() = openVivoSettings(VIVO_POWER_SAVING, VIVO_BACKGROUND_POWER_ACTIVITY)
+
+    private fun openVivoSettings(packageName: String, activity: String) {
         try {
-            startActivity(vivo)
+            startActivity(Intent().setComponent(ComponentName(packageName, activity)))
         } catch (_: ActivityNotFoundException) {
             openAppDetails()
         } catch (_: SecurityException) {
@@ -149,5 +156,7 @@ class MainActivity : ComponentActivity(), UiActions {
         const val GEMINI_APP = "com.google.android.apps.bard"
         const val VIVO_PERMISSION_MANAGER = "com.vivo.permissionmanager"
         const val VIVO_AUTOSTART_ACTIVITY = "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
+        const val VIVO_POWER_SAVING = "com.iqoo.powersaving"
+        const val VIVO_BACKGROUND_POWER_ACTIVITY = "com.iqoo.powersaving.BackgroundHighUsageActivity"
     }
 }

@@ -65,6 +65,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Меню питания из shell: `input keyevent --longpress KEYCODE_POWER`.
 - vivo отбрасывает загрузочные рассылки (`skip for auto start`), пока приложение не включено в
   `com.vivo.permissionmanager/.activity.BgStartUpManagerActivity`. Поэтому `MainActivity.onStart` тоже запускает демон при необходимости.
+- vivo замораживает фоновые приложения (`am_app_frozen … from fast_freezer` в `logcat -b events`) через секунды после
+  ухода с экрана, foreground-служба не спасает, а запущенное задание JobScheduler vivo при заморозке отменяет.
+  Исключение — «Разрешить высокое энергопотребление» в `com.iqoo.powersaving/.BackgroundHighUsageActivity` (шаг мастера).
+  Без него `AutoStartService`, ждущая Wi-Fi, засыпает навсегда. Демон (uid shell) не замораживается.
 - Номер `/dev/input/eventN` у `pmic_pwrkey` меняется между загрузками, устройство ищется по имени.
 - Доверенные сети беспроводной отладки хранятся по BSSID.
 - mDNS на телефоне ненадёжен: после перезапуска отладки остаётся устаревшая запись, а системный клиент mDNS не разбирает

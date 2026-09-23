@@ -58,7 +58,7 @@ object PowerKeyController {
 
     val isPaired: Boolean get() = prefs.getBoolean(KEY_PAIRED, false)
 
-    /** Пройден ли мастер первой настройки (последний шаг — автозапуск vivo — проверить нельзя). */
+    /** Пройден ли мастер первой настройки (последние шаги — настройки vivo — проверить нельзя). */
     val isSetupDone: Boolean get() = prefs.getBoolean(KEY_SETUP_DONE, false)
 
     fun setSetupDone(value: Boolean) {
