@@ -20,17 +20,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Gradle 9 и AGP 9 требуют JDK 17+. Android SDK на ubuntu-latest уже есть,
       # недостающую платформу (compileSdk) AGP докачает сам: лицензии на раннере приняты.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
 
       # Кэш зависимостей и сборки Gradle между запусками, заодно проверка gradle-wrapper.jar.
-      - uses: gradle/actions/setup-gradle@v4
+      # По умолчанию кэш сохраняет только основная ветка, а работа идёт в dev: без записи оттуда
+      # каждая сборка скачивала бы все зависимости заново.
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
 
       # Debug-сборки подписываются ключом ~/.android/debug.keystore, а на раннере он каждый раз новый.
       # APK с другой подписью Android не поставит поверх уже установленного (придётся удалять приложение
@@ -55,7 +59,7 @@ jobs:
         id: version
         run: echo "name=$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: AIChanger-${{ steps.version.outputs.name }}-${{ github.run_number }}
           path: app/build/outputs/apk/debug/app-debug.apk
