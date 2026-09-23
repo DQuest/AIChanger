@@ -12,6 +12,7 @@ import android.os.Looper
 import android.net.Uri
 import android.provider.Settings
 import android.util.TypedValue
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -27,6 +28,8 @@ class MainActivity : Activity() {
     private lateinit var autoStartButton: Button
     private lateinit var voiceButton: RadioButton
     private lateinit var windowButton: RadioButton
+    private lateinit var assistantGroup: RadioGroup
+    private lateinit var assistantNote: TextView
     private val onChange: () -> Unit = { runOnUiThread(::refresh) }
     private val handler = Handler(Looper.getMainLooper())
     private val poll = object : Runnable {
@@ -59,6 +62,8 @@ class MainActivity : Activity() {
             text = "Разрешить автозапуск (vivo)"
             setOnClickListener { openAutoStartSettings() }
         }
+        assistantGroup = RadioGroup(this)
+        assistantNote = TextView(this)
         voiceButton = RadioButton(this).apply { text = "Сразу голосовой ввод" }
         windowButton = RadioButton(this).apply { text = "Окно Gemini без прослушивания" }
         val modeGroup = RadioGroup(this).apply {
@@ -70,12 +75,15 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padding, padding, padding, padding)
-            addView(title("Удержание кнопки питания → Gemini"))
+            addView(title("Удержание кнопки питания → ИИ-ассистент"))
             addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
             addView(pairButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding })
             addView(toggleButton, LinearLayout.LayoutParams(-1, -2))
             addView(autoStartButton, LinearLayout.LayoutParams(-1, -2))
-            addView(title("Что открывать"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding * 2 })
+            addView(title("Ассистент"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding * 2 })
+            addView(assistantGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding / 2 })
+            addView(assistantNote, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding / 2 })
+            addView(title("Режим Gemini"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding * 2 })
             addView(modeGroup, LinearLayout.LayoutParams(-1, -2).apply { topMargin = padding / 2 })
             addView(TextView(this@MainActivity).apply {
                 text = "Меню питания: держите кнопку дольше, около 2 с.\n\n" +
@@ -88,6 +96,23 @@ class MainActivity : Activity() {
             fitsSystemWindows = true
             addView(content)
         })
+    }
+
+    /** Список строится заново при каждом показе экрана: ассистентов могли установить или удалить. */
+    private fun showAssistants() {
+        assistantGroup.setOnCheckedChangeListener(null)
+        assistantGroup.removeAllViews()
+        for (assistant in Assistants.find(this)) {
+            assistantGroup.addView(RadioButton(this).apply {
+                id = View.generateViewId()
+                text = assistant.label
+                tag = assistant
+            })
+        }
+        assistantGroup.setOnCheckedChangeListener { group, checkedId ->
+            val assistant = group.findViewById<RadioButton>(checkedId)?.tag as? Assistant ?: return@setOnCheckedChangeListener
+            if (assistant.target != PowerKeyController.assistant) PowerKeyController.setAssistant(assistant.target)
+        }
     }
 
     private fun title(text: String) = TextView(this).apply {
@@ -130,6 +155,7 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         PowerKeyController.addListener(onChange)
+        showAssistants()
         refresh()
         PowerKeyController.startIfNeeded(applicationContext)
         handler.post(poll)
@@ -163,6 +189,23 @@ class MainActivity : Activity() {
         toggleButton.text = if (enabled) "Выключить (вернуть BlueLM)" else "Включить"
         val selected = if (PowerKeyController.isVoiceMode) voiceButton else windowButton
         if (!selected.isChecked) selected.isChecked = true
+        val target = PowerKeyController.assistant
+        val assistantButton = (0 until assistantGroup.childCount).map { assistantGroup.getChildAt(it) as RadioButton }
+            .firstOrNull { (it.tag as Assistant).target == target }
+        if (assistantButton != null && !assistantButton.isChecked) assistantButton.isChecked = true
+        val assistant = assistantButton?.tag as? Assistant
+        assistantNote.text = when {
+            assistant == null -> "Выбранный ассистент не найден, выберите другого."
+            assistant.changesSystemAssistant -> "${assistant.label} вызывается только как системный ассистент, " +
+                "поэтому AIChanger сделает его ассистентом телефона. Прежний вернётся, если выбрать другого " +
+                "или выключить перехват."
+            else -> ""
+        }
+        assistantNote.visibility = if (assistantNote.text.isEmpty()) View.GONE else View.VISIBLE
+        // Остальные ассистенты сами решают, слушать ли сразу; выбрать можно только у Gemini.
+        val gemini = target == Assistants.GEMINI.target
+        voiceButton.isEnabled = gemini
+        windowButton.isEnabled = gemini
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

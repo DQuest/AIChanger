@@ -10,6 +10,16 @@ import android.util.Log
 import dev.dquest.aichanger.daemon.DaemonProtocol
 import dev.dquest.aichanger.daemon.PowerKeyDaemon
 import java.io.IOException
+import java.io.DataInputStream
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.channels.SelectionKey
+import java.nio.channels.Selector
+import java.nio.channels.SocketChannel
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 /**
  * Запускает [PowerKeyDaemon] с uid shell через собственный adb приложения: включает беспроводную
@@ -21,11 +31,27 @@ object DaemonLauncher {
     private const val TAG = "AIChanger"
     private const val ADB_WIFI_ENABLED = "adb_wifi_enabled"
     private const val DEVELOPMENT_SETTINGS_ENABLED = "development_settings_enabled"
+    private const val MARKS = "launcher_marks"
     private const val WIFI_WAIT_MS = 90_000L
     private const val CONNECT_ATTEMPTS = 5
     private const val CONNECT_TIMEOUT_MS = 15_000L
     private const val DAEMON_WAIT_MS = 10_000L
     private const val POLL_MS = 500L
+    private const val PORT_WAIT_MS = 6_000L
+    private const val LOOPBACK = "127.0.0.1"
+    // Диапазон, из которого ядро выдаёт порт adbd (/proc/sys/net/ipv4/ip_local_port_range).
+    private val EPHEMERAL_PORTS = 32768..60999
+    private const val SCAN_BATCH = 512
+    private const val SCAN_THREADS = 8
+    private const val PROBE_TIMEOUT_MS = 500
+    private const val ADB_HEADER_SIZE = 24
+    private const val A_CNXN = 0x4e584e43
+    private const val A_AUTH = 0x48545541
+    private const val A_STLS = 0x534c5453
+    private val ADB_REPLIES = setOf(A_CNXN, A_AUTH, A_STLS)
+    private const val ADB_VERSION = 0x01000001
+    private const val ADB_MAX_DATA = 256 * 1024
+    private const val SCAN_CONNECT_TIMEOUT_MS = 200
 
     fun canWriteSecureSettings(context: Context) =
         context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
@@ -41,21 +67,29 @@ object DaemonLauncher {
         check(waitForDaemon(token)) { "демон не ответил после запуска" }
     }
 
-    /** Возвращает BlueLM на кнопку, когда демона, который сделал бы это сам, уже нет. */
-    fun restoreBlueLm(context: Context) {
-        withWirelessAdb(context) { adb -> shell(adb, DaemonProtocol.blueLmCommand(true)) }
+    /** Возвращает BlueLM на кнопку и прежнего системного ассистента, когда демона, который сделал бы это сам, уже нет. */
+    fun restoreSystem(context: Context, restoreRole: String?) {
+        withWirelessAdb(context) { adb ->
+            shell(adb, DaemonProtocol.blueLmCommand(true))
+            restoreRole?.let { shell(adb, DaemonProtocol.assistantRoleCommand(it)) }
+        }
     }
 
     private fun withWirelessAdb(context: Context, block: (AdbManager) -> Unit) {
         waitForWifi(context)
         val resolver = context.contentResolver
-        val wasEnabled = Settings.Global.getInt(resolver, ADB_WIFI_ENABLED, 0) == 1
+        // Если процесс убили посреди запуска (например, обновлением), настройки остались включёнными нами.
+        // Отметки об этом не дают принять их за включённые пользователем и оставить так навсегда.
+        val marks = context.createDeviceProtectedStorageContext().getSharedPreferences(MARKS, Context.MODE_PRIVATE)
+        val wasEnabled = Settings.Global.getInt(resolver, ADB_WIFI_ENABLED, 0) == 1 && !marks.getBoolean(ADB_WIFI_ENABLED, false)
         // Беспроводная отладка живёт внутри настроек для разработчиков: если их выключили, включаем на время.
-        val devWasEnabled = Settings.Global.getInt(resolver, DEVELOPMENT_SETTINGS_ENABLED, 0) == 1
+        val devWasEnabled = Settings.Global.getInt(resolver, DEVELOPMENT_SETTINGS_ENABLED, 0) == 1 &&
+            !marks.getBoolean(DEVELOPMENT_SETTINGS_ENABLED, false)
         if (!wasEnabled) {
             check(canWriteSecureSettings(context)) {
                 "включите «Беспроводная отладка» в настройках для разработчиков и повторите"
             }
+            marks.edit().putBoolean(ADB_WIFI_ENABLED, true).putBoolean(DEVELOPMENT_SETTINGS_ENABLED, !devWasEnabled).commit()
             if (!devWasEnabled) Settings.Global.putInt(resolver, DEVELOPMENT_SETTINGS_ENABLED, 1)
             // Не включится в сети, для которой не разрешено «Всегда разрешать в этой сети».
             Settings.Global.putInt(resolver, ADB_WIFI_ENABLED, 1)
@@ -67,6 +101,7 @@ object DaemonLauncher {
             if (!wasEnabled) {
                 Settings.Global.putInt(resolver, ADB_WIFI_ENABLED, 0)
                 if (!devWasEnabled) Settings.Global.putInt(resolver, DEVELOPMENT_SETTINGS_ENABLED, 0)
+                marks.edit().clear().commit()
             }
         }
     }
@@ -92,7 +127,7 @@ object DaemonLauncher {
         repeat(CONNECT_ATTEMPTS) { attempt ->
             if (attempt > 0) restartWirelessAdb(context)
             try {
-                if (adb.isConnected || adb.connectTls(context, CONNECT_TIMEOUT_MS)) {
+                if (adb.isConnected || connect(context, adb)) {
                     try {
                         block(adb)
                     } finally {
@@ -108,6 +143,126 @@ object DaemonLauncher {
             Thread.sleep(POLL_MS * 4)
         }
         throw IllegalStateException("не удалось подключиться к беспроводной отладке: ${lastError?.message}", lastError)
+    }
+
+    /**
+     * Порт беспроводной отладки ищем сами: свойство service.adb.tls.port приложениям закрыто, а mDNS
+     * на телефоне ненадёжен: после перезапуска отладки остаётся устаревшая запись, а системный
+     * клиент mDNS не может разобрать часть пакетов, и libadb не находит порт. mDNS — запасной путь.
+     */
+    private fun connect(context: Context, adb: AdbManager): Boolean {
+        val rejected = mutableSetOf<Int>()
+        val deadline = System.currentTimeMillis() + PORT_WAIT_MS
+        do {
+            val started = System.currentTimeMillis()
+            val ports = parallel(findLocalPorts().filter { it !in rejected }) { port -> port.takeIf(::isAdbPort) }
+            Log.i(TAG, "adb ports ${ports.joinToString()} found in ${System.currentTimeMillis() - started} ms")
+            for (port in ports) {
+                val connected = try {
+                    adb.connect(LOOPBACK, port)
+                } catch (e: Exception) {
+                    Log.w(TAG, "ADB connect to port $port failed: $e")
+                    false
+                }
+                if (connected) {
+                    Log.i(TAG, "ADB connected on port $port")
+                    return true
+                }
+                rejected += port
+            }
+            // Сразу после включения отладки adbd открывает порт не мгновенно.
+            Thread.sleep(POLL_MS)
+        } while (System.currentTimeMillis() < deadline)
+        return adb.connectTls(context, CONNECT_TIMEOUT_MS)
+    }
+
+    /**
+     * Порты, которые слушают на localhost в диапазоне порта adbd, кроме порта нашего демона.
+     * Неблокирующие подключения пачками в нескольких потоках: по одному перебор ~28 тысяч портов занимал секунды.
+     */
+    private fun findLocalPorts(): List<Int> {
+        val size = (EPHEMERAL_PORTS.last - EPHEMERAL_PORTS.first) / SCAN_THREADS + 1
+        val parts = (0 until SCAN_THREADS).map { i ->
+            EPHEMERAL_PORTS.first + i * size..minOf(EPHEMERAL_PORTS.first + (i + 1) * size - 1, EPHEMERAL_PORTS.last)
+        }
+        return parallel(parts, ::findOpenPorts).flatten().filter { it != DaemonProtocol.PORT }.sorted()
+    }
+
+    private fun <T, R : Any> parallel(items: List<T>, work: (T) -> R?): List<R> {
+        if (items.isEmpty()) return emptyList()
+        val pool = Executors.newFixedThreadPool(minOf(items.size, SCAN_THREADS))
+        try {
+            return items.map { pool.submit(Callable { work(it) }) }.mapNotNull { it.get() }
+        } finally {
+            pool.shutdown()
+        }
+    }
+
+    private fun findOpenPorts(ports: IntRange): List<Int> {
+        val open = mutableListOf<Int>()
+        Selector.open().use { selector ->
+            for (batch in ports.chunked(SCAN_BATCH)) {
+                // Считаем незавершённые сами: отменённые ключи остаются в selector.keys() до следующего select.
+                var pending = 0
+                for (port in batch) {
+                    val channel = SocketChannel.open().apply { configureBlocking(false) }
+                    try {
+                        if (channel.connect(InetSocketAddress(LOOPBACK, port))) {
+                            open += port
+                            channel.close()
+                        } else {
+                            channel.register(selector, SelectionKey.OP_CONNECT, port)
+                            pending++
+                        }
+                    } catch (_: IOException) {
+                        channel.close()
+                    }
+                }
+                val deadline = System.currentTimeMillis() + SCAN_CONNECT_TIMEOUT_MS
+                while (pending > 0) {
+                    val left = deadline - System.currentTimeMillis()
+                    if (left <= 0) break
+                    selector.select(left)
+                    for (key in selector.selectedKeys()) {
+                        val channel = key.channel() as SocketChannel
+                        if (runCatching { channel.finishConnect() }.getOrDefault(false)) open += key.attachment() as Int
+                        key.cancel()
+                        channel.close()
+                        pending--
+                    }
+                    selector.selectedKeys().clear()
+                }
+                // Не ответившие за отведённое время закрываем; selectNow снимает отменённые ключи.
+                for (key in selector.keys()) {
+                    key.cancel()
+                    key.channel().close()
+                }
+                selector.selectNow()
+            }
+        }
+        return open
+    }
+
+    /**
+     * adbd отвечает на CNXN своим сообщением (на порту беспроводной отладки — STLS), чужие сервисы — нет.
+     * Без этой пробы libadb ждала бы ответа от каждого чужого порта по несколько секунд.
+     */
+    private fun isAdbPort(port: Int): Boolean = try {
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(LOOPBACK, port), PROBE_TIMEOUT_MS)
+            socket.soTimeout = PROBE_TIMEOUT_MS
+            val payload = "host::\u0000".toByteArray()
+            val message = ByteBuffer.allocate(ADB_HEADER_SIZE + payload.size).order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(A_CNXN).putInt(ADB_VERSION).putInt(ADB_MAX_DATA).putInt(payload.size)
+                .putInt(payload.sumOf { it.toInt() and 0xff }).putInt(A_CNXN.inv())
+                .put(payload)
+            socket.getOutputStream().write(message.array())
+            val reply = ByteArray(4)
+            DataInputStream(socket.getInputStream()).readFully(reply)
+            ByteBuffer.wrap(reply).order(ByteOrder.LITTLE_ENDIAN).int in ADB_REPLIES
+        }
+    } catch (_: IOException) {
+        false
     }
 
     /**

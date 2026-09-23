@@ -1,6 +1,7 @@
 package dev.dquest.aichanger
 
 import android.content.Context
+import dev.dquest.aichanger.daemon.DaemonProtocol
 import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
@@ -13,6 +14,8 @@ object PowerKeyController {
     private const val KEY_PAIRED = "paired"
     private const val KEY_VOICE = "voice"
     private const val KEY_TOKEN = "token"
+    private const val KEY_ASSISTANT = "assistant"
+    private const val KEY_RESTORE_ROLE = "restore_role"
 
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
     private val background = Executors.newSingleThreadExecutor()
@@ -46,6 +49,12 @@ object PowerKeyController {
 
     val isPaired: Boolean get() = prefs.getBoolean(KEY_PAIRED, false)
 
+    /** Кого вызывать, в формате [DaemonProtocol.ASSISTANT]. */
+    val assistant: String get() = prefs.getString(KEY_ASSISTANT, null) ?: Assistants.GEMINI.target
+
+    /** Кого вернуть системным ассистентом при выключении; хранится, потому что демон после перезагрузки его не знает. */
+    private val restoreRole: String? get() = prefs.getString(KEY_RESTORE_ROLE, null)
+
     val isDaemonRunning: Boolean get() = daemonVersion != null
 
     /** Секрет для команд демону; передаётся ему при запуске. */
@@ -72,6 +81,21 @@ object PowerKeyController {
         }
     }
 
+    fun setAssistant(target: String) {
+        prefs.edit().putString(KEY_ASSISTANT, target).apply()
+        notifyListeners()
+        background.execute {
+            applyAssistant()
+            refresh()
+        }
+    }
+
+    /** Передаёт выбор демону и запоминает, кого он велит вернуть системным ассистентом при выключении. */
+    private fun applyAssistant() {
+        val reply = DaemonClient.setAssistant(token, assistant, restoreRole) ?: return
+        prefs.edit().putString(KEY_RESTORE_ROLE, reply.takeIf { it != DaemonProtocol.NONE }).apply()
+    }
+
     /**
      * Блокирующий вызов: убеждается, что работает демон этой версии, иначе запускает его заново.
      * Бросает исключение с понятным текстом, если запустить не удалось. Вызовы не пересекаются:
@@ -88,6 +112,8 @@ object PowerKeyController {
                 check(isPaired) { "сначала выполните сопряжение с беспроводной отладкой" }
                 DaemonLauncher.launch(context, token, isVoiceMode)
             }
+            // Демон после запуска вызывает Gemini, а выбранного ассистента узнаёт только отсюда.
+            applyAssistant()
             lastLaunchError = null
         } catch (e: Exception) {
             lastLaunchError = e.message
@@ -98,14 +124,14 @@ object PowerKeyController {
         }
     }
 
-    /** Останавливает демон; он сам возвращает BlueLM на кнопку питания. */
+    /** Останавливает демон; он сам возвращает BlueLM на кнопку питания и прежнего системного ассистента. */
     fun disable(context: Context) {
         setEnabled(false)
         val appContext = context.applicationContext
         background.execute {
-            if (DaemonClient.stop(token) == null) {
-                runCatching { DaemonLauncher.restoreBlueLm(appContext) }
-            }
+            val restored = DaemonClient.stop(token) != null ||
+                runCatching { DaemonLauncher.restoreSystem(appContext, restoreRole) }.isSuccess
+            if (restored) prefs.edit().remove(KEY_RESTORE_ROLE).apply()
             refresh()
         }
     }

@@ -56,9 +56,13 @@ object PowerKeyDaemon {
                 engine.voiceMode = parts.getOrNull(2) != DaemonProtocol.MODE_WINDOW
                 DaemonProtocol.OK
             }
+            DaemonProtocol.ASSISTANT -> {
+                val target = parts.getOrNull(2) ?: return@use
+                val restore = parts.getOrNull(3)?.takeIf { it != DaemonProtocol.NONE }
+                engine.setAssistant(target, restore) ?: DaemonProtocol.NONE
+            }
             DaemonProtocol.STOP -> {
-                engine.stop()
-                engine.setBlueLmOnPowerKey(true)
+                restoreSystem(engine)
                 out.write(DaemonProtocol.OK)
                 out.flush()
                 Log.i(TAG, "daemon stopped by app")
@@ -72,7 +76,7 @@ object PowerKeyDaemon {
 
     /**
      * Демон работает с uid shell, и удаление приложения его не убивает. Без этой проверки кнопка
-     * продолжала бы вызывать Gemini, а BlueLM так и остался бы выключенным даже после перезагрузки.
+     * продолжала бы вызывать ассистента, а BlueLM так и остался бы выключенным даже после перезагрузки.
      * При обновлении APK тоже пропадает, но пакет остаётся: тогда приложение само перезапустит демон.
      */
     private fun watchForUninstall(engine: PowerKeyEngine) {
@@ -80,11 +84,17 @@ object PowerKeyDaemon {
         while (true) {
             Thread.sleep(UNINSTALL_CHECK_MS)
             if (apk.exists() || isPackageInstalled()) continue
-            engine.stop()
-            engine.setBlueLmOnPowerKey(true)
+            restoreSystem(engine)
             Log.i(TAG, "app uninstalled, daemon exits")
             exitProcess(0)
         }
+    }
+
+    /** Останавливает перехват и возвращает всё, что демон менял: BlueLM на кнопке и системного ассистента. */
+    private fun restoreSystem(engine: PowerKeyEngine) {
+        engine.stop()
+        engine.setBlueLmOnPowerKey(true)
+        engine.restoreAssistantRole()
     }
 
     private fun isPackageInstalled(): Boolean {

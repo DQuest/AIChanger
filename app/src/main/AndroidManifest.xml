@@ -13,6 +13,16 @@
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Поиск ассистентов, которых можно вызывать кнопкой (Assistants.find). -->
+    <queries>
+        <intent>
+            <action android:name="android.service.voice.VoiceInteractionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.ASSIST" />
+        </intent>
+    </queries>
+
     <application
         android:name=".App"
         android:directBootAware="true"

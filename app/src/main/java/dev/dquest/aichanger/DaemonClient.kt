@@ -18,6 +18,10 @@ object DaemonClient {
     fun setVoiceMode(token: String, voice: Boolean) =
         request(token, "${DaemonProtocol.MODE} ${if (voice) DaemonProtocol.MODE_VOICE else DaemonProtocol.MODE_WINDOW}")
 
+    /** Ответ: кого вернуть системным ассистентом при выключении ([DaemonProtocol.NONE] — никого), null — демона нет. */
+    fun setAssistant(token: String, target: String, restore: String?) =
+        request(token, "${DaemonProtocol.ASSISTANT} $target ${restore ?: DaemonProtocol.NONE}")?.trim()
+
     fun stop(token: String) = request(token, DaemonProtocol.STOP)
 
     private fun request(token: String, command: String): String? = runCatching {

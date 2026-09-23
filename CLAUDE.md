@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-AIChanger: удержание кнопки питания на телефонах vivo с OriginOS 6 (Android 16, без root) открывает Gemini вместо BlueLM.
+AIChanger: удержание кнопки питания на телефонах vivo с OriginOS 6 (Android 16, без root) открывает Gemini
+или другого ИИ-ассистента (Claude, ChatGPT, Perplexity, Алиса) вместо BlueLM.
 Пользовательское описание и настройка: [README.md](README.md).
 
 ## Сборка и установка
@@ -27,10 +28,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   - `PowerKeyController`: настройки и состояние, `ensureRunning` запускает демон, если не отвечает демон текущей версии.
   - `BootReceiver` + `AutoStartService`: автозапуск после загрузки (до первой разблокировки) и после обновления.
   - `DaemonClient`: клиент протокола.
+  - `Assistants`: список ассистентов — приложения с VoiceInteractionService; для каждого способ вызова
+    (`target`: пакет системного ассистента или `пакет/activity` для прямого запуска ASSIST).
 - **Демон** (`daemon/`, процесс `aichanger-daemon`, uid shell):
   - `PowerKeyDaemon`: точка входа `main`, TCP-сервер `127.0.0.1:47831` с токеном, следит за удалением приложения.
-  - `PowerKeyEngine`: читает `/dev/input` (`pmic_pwrkey`), по удержанию шлёт `KEYCODE_VOICE_ASSIST`/`KEYCODE_ASSIST`, по ~2 с открывает меню питания.
-  - `DaemonProtocol`: общие константы и команды (`ping`, `status`, `mode`, `stop`).
+  - `PowerKeyEngine`: читает `/dev/input` (`pmic_pwrkey`), по удержанию вызывает ассистента (клавиша ASSIST
+    для системного ассистента или `am start` его activity), по ~2 с открывает меню питания. Меняет роль системного
+    ассистента, если выбранный работает только так, и помнит, кого вернуть.
+  - `DaemonProtocol`: общие константы и команды (`ping`, `status`, `mode`, `assistant`, `stop`).
 
 Правила, которые легко нарушить:
 
@@ -41,8 +46,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   на компоненты не распространяется) и хранить данные в `createDeviceProtectedStorageContext()`.
 - Команда запуска демона через libadb должна заканчиваться `& sleep 1`: `shell:` идёт через PTY, и без паузы фоновый
   процесс гибнет от hangup раньше, чем `setsid` его отвяжет. В конце потока libadb бросает «Stream closed» вместо -1.
-- Демон переживает удаление приложения (uid shell), поэтому сам возвращает BlueLM и завершается (`watchForUninstall`).
-  То же при команде `stop`.
+- Демон переживает удаление приложения (uid shell), поэтому сам возвращает BlueLM и прежнего системного ассистента
+  и завершается (`watchForUninstall`). То же при команде `stop`. Кого вернуть, приложение хранит в настройках
+  (`restore_role`) и передаёт демону командой `assistant` после каждого запуска.
+- Настройки отладки, которые включило приложение, отмечаются в `launcher_marks`: если процесс убьют посреди запуска
+  (например, обновлением), следующий запуск их всё равно вернёт.
 
 ## Особенности OriginOS
 
@@ -56,8 +64,15 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - vivo отбрасывает загрузочные рассылки (`skip for auto start`), пока приложение не включено в
   `com.vivo.permissionmanager/.activity.BgStartUpManagerActivity`. Поэтому `MainActivity.onStart` тоже запускает демон при необходимости.
 - Номер `/dev/input/eventN` у `pmic_pwrkey` меняется между загрузками, устройство ищется по имени.
-- Доверенные сети беспроводной отладки хранятся по BSSID. После загрузки подключение иногда не находит порт по mDNS,
-  поэтому `DaemonLauncher` перезапускает беспроводную отладку перед повторными попытками.
+- Доверенные сети беспроводной отладки хранятся по BSSID.
+- mDNS на телефоне ненадёжен: после перезапуска отладки остаётся устаревшая запись, а системный клиент mDNS не разбирает
+  часть пакетов (`Error while decoding multicast packet`). `service.adb.tls.port` приложениям (и shell) закрыт.
+  Поэтому `DaemonLauncher` ищет порт перебором 127.0.0.1 в `ip_local_port_range` (32768–60999, неблокирующие сокеты)
+  и проверяет его пакетом CNXN (adbd отвечает STLS); mDNS остаётся запасным путём.
+- Прямой запуск ассистента (`am start`) клавиш не нажимает, поэтому перед ним шлётся `KEYCODE_WAKEUP`: иначе отпускание
+  кнопки питания погасит экран.
+- ChatGPT: `AssistantProxyActivity` при прямом запуске сразу закрывается, работает только как системный ассистент.
+  Claude, Perplexity и Алиса при прямом запуске открывают свою панель и сразу слушают.
 - USB-отладка в OriginOS продолжает работать и при выключенных параметрах разработчика.
 
 ## Отладка

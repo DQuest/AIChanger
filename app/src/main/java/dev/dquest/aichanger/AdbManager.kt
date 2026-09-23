@@ -16,6 +16,7 @@ import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
+import java.util.concurrent.TimeUnit
 
 /**
  * ADB-клиент приложения для подключения к собственному adbd по беспроводной отладке.
@@ -28,6 +29,8 @@ class AdbManager private constructor(context: Context) : AbsAdbConnectionManager
 
     init {
         api = Build.VERSION.SDK_INT
+        // Среди найденных перебором портов могут быть чужие, которые на CNXN не ответят: не ждём их долго.
+        setTimeout(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
         val dir = File(context.createDeviceProtectedStorageContext().filesDir, "adb").apply { mkdirs() }
         val keyFile = File(dir, "key.pk8")
         val certFile = File(dir, "cert.der")
@@ -56,6 +59,7 @@ class AdbManager private constructor(context: Context) : AbsAdbConnectionManager
 
     companion object {
         private const val DAY_MS = 24 * 60 * 60 * 1000L
+        private const val CONNECT_TIMEOUT_S = 5L
         private const val CERT_VALIDITY_MS = 30 * 365 * DAY_MS
 
         @Volatile private var instance: AdbManager? = null

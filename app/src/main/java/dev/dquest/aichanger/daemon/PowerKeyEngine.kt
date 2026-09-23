@@ -12,10 +12,11 @@ import kotlin.concurrent.thread
 /**
  * Логика кнопки питания. Работает в процессе [PowerKeyDaemon] с uid shell.
  *
- * Читает сырые события кнопки питания (`pmic_pwrkey`) из /dev/input. При удержании
- * дольше порога закрывает меню питания vivo и отправляет KEYCODE_VOICE_ASSIST или KEYCODE_ASSIST,
- * которые PhoneWindowManager передаёт системному ассистенту (Gemini): сразу с голосовым вводом или без.
- * Если держать дольше [powerMenuMs], закрывает Gemini и открывает штатное меню питания vivo:
+ * Читает сырые события кнопки питания (`pmic_pwrkey`) из /dev/input. При удержании дольше порога
+ * вызывает выбранного ассистента ([assistant]): для системного ассистента (Gemini, ChatGPT) отправляет
+ * KEYCODE_VOICE_ASSIST или KEYCODE_ASSIST, которые PhoneWindowManager передаёт ему, остальных (Claude,
+ * Perplexity, Алиса) запускает напрямую через их activity режима ассистента.
+ * Если держать дольше [powerMenuMs], закрывает ассистента и открывает штатное меню питания vivo:
  * своё меню vivo уже не покажет, потому что нажатие питания помечено обработанным.
  */
 class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Volatile var voiceMode: Boolean) {
@@ -33,6 +34,12 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
     @Volatile private var device: String? = null
     @Volatile private var lastError: String? = null
     @Volatile private var fired = 0
+
+    /** Кого вызывать, в формате [DaemonProtocol.ASSISTANT]. */
+    @Volatile var assistant: String = DaemonProtocol.GOOGLE_APP
+        private set
+    // Кого вернуть системным ассистентом при выключении, если ради выбранного мы его поменяли.
+    @Volatile private var restoreRole: String? = null
 
     fun start() {
         synchronized(this) {
@@ -56,14 +63,43 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
     fun status(): String = buildString {
         append("Устройство: ${device ?: "—"}\n")
         append("Порог удержания: $holdMs мс, меню питания: $powerMenuMs мс\n")
-        append("Режим: ${if (voiceMode) "голосовой ввод" else "окно без прослушивания"}\n")
-        append("Вызовов Gemini: $fired\n")
+        append("Ассистент: $assistant\n")
+        if (isGemini(assistant)) append("Режим: ${if (voiceMode) "голосовой ввод" else "окно без прослушивания"}\n")
+        append("Вызовов ассистента: $fired\n")
         append("BlueLM на кнопке: ${if (sh(GET_BLUELM_SWITCH).trim() == "1") "включён" else "выключен"}")
         lastError?.let { append("\nОшибка: $it") }
     }
 
     fun setBlueLmOnPowerKey(enabled: Boolean) {
         sh(DaemonProtocol.blueLmCommand(enabled))
+    }
+
+    /**
+     * Прямому запуску роль системного ассистента не нужна, и если мы её меняли, возвращаем прежнего.
+     * Остальных делаем системным ассистентом и запоминаем, кто им был. Возвращает, кого вернуть при выключении.
+     */
+    @Synchronized
+    fun setAssistant(target: String, restore: String?): String? {
+        restoreRole = restore
+        if (DaemonProtocol.isDirect(target)) {
+            restoreAssistantRole()
+        } else {
+            val holder = sh(DaemonProtocol.GET_ASSISTANT_ROLE).lineSequence().firstOrNull()?.trim().orEmpty()
+            if (holder != target) {
+                if (restoreRole == null) restoreRole = holder.ifEmpty { DaemonProtocol.NO_ASSISTANT }
+                sh(DaemonProtocol.assistantRoleCommand(target))
+            }
+            if (restoreRole == target) restoreRole = null
+        }
+        assistant = target
+        return restoreRole
+    }
+
+    @Synchronized
+    fun restoreAssistantRole() {
+        val previous = restoreRole ?: return
+        sh(DaemonProtocol.assistantRoleCommand(previous))
+        restoreRole = null
     }
 
     private fun readLoop() {
@@ -109,20 +145,27 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
 
     private fun showPowerMenu(id: Int) {
         menuPress = id
-        // Закрываем уже открытый Gemini и вызываем меню так же, как его вызвало бы долгое нажатие.
+        // Gemini закрывается вместе с системными диалогами, остальные ассистенты — обычные activity,
+        // их закрываем кнопкой «Назад», но только если открыты они, а не приложение пользователя.
+        val target = assistant
+        if (!isGemini(target) && topActivity().contains(DaemonProtocol.assistantPackage(target) + "/")) {
+            sh("input keyevent KEYCODE_BACK")
+        }
+        // Вызываем меню так же, как его вызвало бы долгое нажатие.
         // Демон этого нажатия не увидит: внедрённые события не проходят через /dev/input.
         sh("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null; input keyevent --longpress KEYCODE_POWER")
     }
 
     private fun invokeAssistant(id: Int) {
+        val target = assistant
         // Сначала закрываем меню питания: CLOSE_SYSTEM_DIALOGS, отправленный после, спрятал бы и Gemini.
         sh("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null")
-        // Экран блокировки vivo не пропускает панель Gemini (остаётся только рамка),
-        // поэтому сначала просим разблокировку и открываем Gemini уже после неё.
+        // Экран блокировки vivo не пропускает панель Gemini (остаётся только рамка), а activity
+        // других ассистентов без разблокировки не откроются, поэтому сначала просим разблокировку.
         if (isKeyguardShowing()) {
             // Любая другая клавиша, нажатая пока питание зажато, помечает нажатие питания обработанным.
             // Без этого отпускание кнопки сработает как короткое нажатие и погасит экран.
-            // На разблокированном экране эту роль играет сама клавиша вызова ассистента.
+            // На разблокированном экране эту роль играет клавиша вызова ассистента (см. [launchAssistant]).
             sh("input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard")
             if (!waitForUnlock() || menuPress == id) return
             Thread.sleep(UNLOCK_SETTLE_MS)
@@ -131,22 +174,43 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         // может закрыться сама (мелькнёт только рамка). Тогда вызываем ещё раз.
         repeat(ASSIST_ATTEMPTS) {
             if (menuPress == id) return
-            sh("input keyevent ${if (voiceMode) "KEYCODE_VOICE_ASSIST" else "KEYCODE_ASSIST"}")
-            if (waitForGemini()) {
+            launchAssistant(target)
+            if (waitForAssistant(target)) {
                 fired++
                 return
             }
         }
     }
 
-    private fun waitForGemini(): Boolean {
-        val deadline = System.currentTimeMillis() + GEMINI_WAIT_MS
+    private fun launchAssistant(target: String) {
+        sh(
+            when {
+                // Прямой запуск клавиш не нажимает, поэтому нажатие питания помечаем обработанным через
+                // KEYCODE_WAKEUP (на включённом экране ничего не делает), иначе отпускание погасит экран.
+                DaemonProtocol.isDirect(target) ->
+                    "input keyevent KEYCODE_WAKEUP; am start -a android.intent.action.ASSIST -n $target >/dev/null"
+                // Голосовая клавиша всегда открывает Google, поэтому для других системных ассистентов только ASSIST.
+                isGemini(target) && voiceMode -> "input keyevent KEYCODE_VOICE_ASSIST"
+                else -> "input keyevent KEYCODE_ASSIST"
+            }
+        )
+    }
+
+    private fun waitForAssistant(target: String): Boolean {
+        // Приложения других ассистентов при холодном старте открываются дольше панели Gemini.
+        val (marker, waitMs) = if (isGemini(target)) GEMINI_ACTIVITY to GEMINI_WAIT_MS
+        else DaemonProtocol.assistantPackage(target) + "/" to APP_WAIT_MS
+        val deadline = System.currentTimeMillis() + waitMs
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(UNLOCK_POLL_MS)
-            if (sh("dumpsys activity activities | grep -m1 topResumedActivity").contains(GEMINI_ACTIVITY)) return true
+            if (topActivity().contains(marker)) return true
         }
         return false
     }
+
+    private fun isGemini(target: String) = target == DaemonProtocol.GOOGLE_APP
+
+    private fun topActivity() = sh("dumpsys activity activities | grep -m1 topResumedActivity")
 
     private fun isKeyguardShowing() = sh("dumpsys window | grep -m1 isKeyguardShowing").contains("=true")
 
@@ -194,6 +258,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         const val UNLOCK_SETTLE_MS = 300L
         const val ASSIST_ATTEMPTS = 3
         const val GEMINI_WAIT_MS = 1500L
+        const val APP_WAIT_MS = 3000L
         const val GEMINI_ACTIVITY = "googlequicksearchbox/com.google.android.apps.search.assistant.surfaces.voice.robin.ui.floaty.activity.FloatyActivity"
     }
 }
