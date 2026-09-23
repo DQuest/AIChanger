@@ -2,10 +2,7 @@ package dev.dquest.aichanger.ui
 
 import android.os.Build
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -19,7 +16,6 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -27,10 +23,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.dquest.aichanger.R
 
-/** Цвета иконки приложения: они же — основа схемы, если системных цветов (Android 12+) нет. */
-private val IconStart = Color(0xFF3D5AFE)
-private val IconEnd = Color(0xFF8E4DFF)
-
+/** Схема, если системных цветов (Android 12+) нет: в тон фиолетово-синему центру иконки. */
 private val LightFallback = lightColorScheme(primary = Color(0xFF4A5BD6), secondary = Color(0xFF6B5CC4))
 private val DarkFallback = darkColorScheme(primary = Color(0xFFBAC3FF), secondary = Color(0xFFCDBEFF))
 
@@ -57,17 +50,14 @@ fun AIChangerTheme(content: @Composable () -> Unit) {
     }
 }
 
-/** Иконка приложения внутри экрана: painterResource не умеет адаптивные иконки, поэтому собираем из слоёв. */
+/** Иконка приложения внутри экрана: painterResource не умеет адаптивные иконки, поэтому берём видимую часть рисунка. */
 @Composable
 fun AppIcon(size: Dp, modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .size(size)
-            .clip(RoundedCornerShape(size * 0.3f))
-            .background(Brush.linearGradient(listOf(IconStart, IconEnd)))
-    ) {
-        Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.fillMaxSize())
-    }
+    Image(
+        painterResource(R.drawable.ic_app_art),
+        contentDescription = null,
+        modifier = modifier.size(size).clip(RoundedCornerShape(size * 0.3f)),
+    )
 }
 
 val ScreenPadding = 20.dp
