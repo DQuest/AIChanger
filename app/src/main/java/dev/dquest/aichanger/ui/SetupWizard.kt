@@ -106,7 +106,14 @@ fun SetupWizard(state: UiState, actions: UiActions) {
                         "Введите показанный код в уведомлении AIChanger.",
                     )
                     Hint("Нужен Wi-Fi. Код вводится один раз, дальше AIChanger подключается сам.")
-                    if (pairingStarted) Waiting("Ждём код сопряжения из уведомления…")
+                    if (!state.notificationsEnabled) {
+                        Hint(
+                            "Уведомления AIChanger запрещены, а код вводится в уведомлении. " +
+                                "Кнопка ниже попросит их разрешить или откроет настройки уведомлений."
+                        )
+                    } else if (pairingStarted) {
+                        Waiting("Ждём код сопряжения из уведомления…")
+                    }
                 }
                 4 -> Step(
                     title = "Разрешите автозапуск",

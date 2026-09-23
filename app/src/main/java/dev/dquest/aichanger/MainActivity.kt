@@ -1,11 +1,13 @@
 package dev.dquest.aichanger
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -43,9 +45,12 @@ class MainActivity : ComponentActivity(), UiActions {
             handler.postDelayed(this, POLL_MS)
         }
     }
-    // Код сопряжения вводится в уведомлении, без разрешения на них ничего не выйдет.
+    // Код сопряжения вводится в уведомлении, без разрешения на них ничего не выйдет. После второго отказа система
+    // больше не спрашивает и сразу отвечает «нет»: тогда разрешить можно только в настройках.
     private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) startPairing() }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startPairing() else openNotificationSettings()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,8 +102,16 @@ class MainActivity : ComponentActivity(), UiActions {
     }
 
     override fun startPairing() {
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        // Разрешение появилось в Android 13; на 11–12 запрос сразу вернул бы «нет».
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        // Разрешение есть, но уведомления приложения выключены в настройках: уведомление с полем кода не появится.
+        if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+            openNotificationSettings()
             return
         }
         // После сопряжения PairingService сам запустит перехват, если он включён.
@@ -109,6 +122,9 @@ class MainActivity : ComponentActivity(), UiActions {
                 .putExtra(":settings:fragment_args_key", "toggle_adb_wireless")
         )
     }
+
+    private fun openNotificationSettings() =
+        startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
 
     /** Без разрешения на автозапуск vivo отбрасывает загрузочную рассылку, и демон не стартует после перезагрузки. */
     override fun openAutoStart() = openVivoSettings(VIVO_PERMISSION_MANAGER, VIVO_AUTOSTART_ACTIVITY)

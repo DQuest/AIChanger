@@ -1,5 +1,6 @@
 package dev.dquest.aichanger.ui
 
+import android.app.NotificationManager
 import android.content.Context
 import android.provider.Settings
 import androidx.compose.runtime.Immutable
@@ -20,6 +21,8 @@ data class UiState(
     val launching: Boolean,
     val waitingForWifi: Boolean,
     val wifiEnabled: Boolean,
+    /** Код сопряжения вводится в уведомлении. */
+    val notificationsEnabled: Boolean,
     val error: String?,
     /** Демон работает, но кнопку не перехватывает. */
     val problem: String?,
@@ -42,6 +45,7 @@ data class UiState(
                 launching = PowerKeyController.launching || (version != null && version != BuildConfig.VERSION_CODE),
                 waitingForWifi = PowerKeyController.waitingForWifi,
                 wifiEnabled = Wifi.isEnabled(context),
+                notificationsEnabled = context.getSystemService(NotificationManager::class.java).areNotificationsEnabled(),
                 error = PowerKeyController.lastLaunchError,
                 problem = PowerKeyController.daemonProblem,
                 assistant = PowerKeyController.assistant,
