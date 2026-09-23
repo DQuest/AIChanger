@@ -133,7 +133,7 @@ class PairingService : Service() {
     }
 
     companion object {
-        const val CHANNEL_ID = "aichanger"
+        private const val CHANNEL_ID = "aichanger"
         private const val PORT_WAIT_MS = 5000L
         private const val PAIRING_CODE_LENGTH = 6
         private const val NOTIFICATION_ID = 1
@@ -145,9 +145,10 @@ class PairingService : Service() {
         fun openAppIntent(context: Context): PendingIntent =
             PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
 
-        fun ensureChannel(context: Context) =
+        /** Громкий канал: уведомление с полем для кода должно всплыть поверх настроек отладки. */
+        private fun ensureChannel(context: Context) =
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "AIChanger", NotificationManager.IMPORTANCE_HIGH)
+                NotificationChannel(CHANNEL_ID, "Сопряжение", NotificationManager.IMPORTANCE_HIGH)
             )
     }
 }

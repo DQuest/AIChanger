@@ -1,6 +1,7 @@
 package dev.dquest.aichanger
 
 import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -42,7 +43,7 @@ class AutoStartService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         lastStartId = startId
-        PairingService.ensureChannel(this)
+        ensureChannel(this)
         // Уже ждём Wi-Fi или запускаем: уведомление оставляем текущее, иначе «Wi-Fi выключен» сменилось бы на «Запуск…».
         val shown = current ?: notification(this, STARTING).also { current = it }
         startForeground(NOTIFICATION_ID, shown, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -54,6 +55,7 @@ class AutoStartService : Service() {
     companion object {
         private const val TAG = "AIChanger"
         private const val NOTIFICATION_ID = 2
+        private const val CHANNEL_ID = "status"
         private const val STARTING = "Запуск перехвата кнопки…"
         // Раз в столько перепроверяем, не включили ли Wi-Fi (подключение к сети приходит сразу, по колбэку).
         private const val WIFI_RECHECK_MS = 10_000L
@@ -69,6 +71,15 @@ class AutoStartService : Service() {
             context.startForegroundService(Intent(context, AutoStartService::class.java))
 
         fun stop(context: Context) = context.stopService(Intent(context, AutoStartService::class.java))
+
+        /**
+         * Свой канал без звука и всплывающих уведомлений: запуск идёт при каждой загрузке и ответа не ждёт.
+         * Канал сопряжения громкий, потому что там ждут ввода кода.
+         */
+        private fun ensureChannel(context: Context) =
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Запуск перехвата", NotificationManager.IMPORTANCE_LOW)
+            )
 
         private fun startWork(context: Context) {
             working = true
@@ -145,7 +156,7 @@ class AutoStartService : Service() {
             )
             val text = "Перехват кнопки запустится сам, как только телефон подключится к Wi-Fi, " +
                 "в котором настраивали AIChanger."
-            return Notification.Builder(context, PairingService.CHANNEL_ID)
+            return Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(if (wifiEnabled) "Wi-Fi не подключён" else "Wi-Fi выключен")
                 .setContentText(text)
@@ -157,7 +168,7 @@ class AutoStartService : Service() {
         }
 
         private fun notification(context: Context, text: String): Notification =
-            Notification.Builder(context, PairingService.CHANNEL_ID)
+            Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("AIChanger")
                 .setContentText(text)
