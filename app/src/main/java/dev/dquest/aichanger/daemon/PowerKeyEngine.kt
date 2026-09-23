@@ -81,7 +81,9 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
      */
     @Synchronized
     fun setAssistant(target: String, restore: String?): String? {
-        restoreRole = restore
+        // Приложение хранит [restore] между запусками демона, но его значение может отстать от нашего: ответ
+        // на прошлую команду потерялся по таймауту или два вызова разминулись. Своё, если оно есть, важнее.
+        if (restoreRole == null) restoreRole = restore
         if (DaemonProtocol.isDirect(target)) {
             restoreAssistantRole()
         } else {

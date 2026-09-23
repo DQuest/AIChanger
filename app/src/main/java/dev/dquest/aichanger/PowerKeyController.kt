@@ -20,6 +20,8 @@ object PowerKeyController {
     private const val KEY_SETUP_DONE = "setup_done"
 
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
+    // Отдельный лок, а не @Synchronized: тот держит ensureRunning на всё время запуска, а выбор ассистента ждать его не должен.
+    private val assistantLock = Any()
     private val background = Executors.newSingleThreadExecutor()
     // Хранилище, доступное до первой разблокировки после загрузки (Direct Boot).
     private lateinit var storage: Context
@@ -117,12 +119,17 @@ object PowerKeyController {
         }
     }
 
-    /** Передаёт выбор демону и запоминает, кого он велит вернуть системным ассистентом при выключении. */
+    /**
+     * Передаёт выбор демону и запоминает, кого он велит вернуть системным ассистентом при выключении.
+     * Вызывается и с экрана, и из [ensureRunning]: без лока ответ одного вызова мог затереть ответ другого.
+     */
     private fun applyAssistant() {
-        when (val reply = DaemonClient.setAssistant(token, assistant, restoreRole) ?: return) {
-            DaemonProtocol.NONE -> prefs.edit().remove(KEY_RESTORE_ROLE).apply()
-            // DaemonProtocol.INVALID и прочее не сохраняем: демон выбор не принял, прежнее значение в силе.
-            else -> if (DaemonProtocol.isValidRestore(reply)) prefs.edit().putString(KEY_RESTORE_ROLE, reply).apply()
+        synchronized(assistantLock) {
+            when (val reply = DaemonClient.setAssistant(token, assistant, restoreRole) ?: return) {
+                DaemonProtocol.NONE -> prefs.edit().remove(KEY_RESTORE_ROLE).commit()
+                // DaemonProtocol.INVALID и прочее не сохраняем: демон выбор не принял, прежнее значение в силе.
+                else -> if (DaemonProtocol.isValidRestore(reply)) prefs.edit().putString(KEY_RESTORE_ROLE, reply).commit()
+            }
         }
     }
 
