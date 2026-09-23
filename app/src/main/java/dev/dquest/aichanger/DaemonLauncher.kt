@@ -89,7 +89,8 @@ object DaemonLauncher {
     private fun withAdb(context: Context, block: (AdbManager) -> Unit) {
         val adb = AdbManager.get(context)
         var lastError: Exception? = null
-        repeat(CONNECT_ATTEMPTS) {
+        repeat(CONNECT_ATTEMPTS) { attempt ->
+            if (attempt > 0) restartWirelessAdb(context)
             try {
                 if (adb.isConnected || adb.connectTls(context, CONNECT_TIMEOUT_MS)) {
                     try {
@@ -101,11 +102,25 @@ object DaemonLauncher {
                 }
             } catch (e: Exception) {
                 lastError = e
-                Log.w(TAG, "ADB connect attempt failed", e)
+                val adbWifi = Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0)
+                Log.w(TAG, "ADB connect attempt ${attempt + 1} failed, adb_wifi_enabled=$adbWifi", e)
             }
             Thread.sleep(POLL_MS * 4)
         }
         throw IllegalStateException("не удалось подключиться к беспроводной отладке: ${lastError?.message}", lastError)
+    }
+
+    /**
+     * Система сама выключает беспроводную отладку, если в момент включения Wi-Fi ещё не готов, а объявление
+     * порта по mDNS после загрузки иногда теряется. Перезапуск отладки лечит оба случая: adbd заново
+     * открывает порт и объявляет его.
+     */
+    private fun restartWirelessAdb(context: Context) {
+        if (!canWriteSecureSettings(context)) return
+        val resolver = context.contentResolver
+        Settings.Global.putInt(resolver, ADB_WIFI_ENABLED, 0)
+        Thread.sleep(POLL_MS * 2)
+        Settings.Global.putInt(resolver, ADB_WIFI_ENABLED, 1)
     }
 
     private fun shell(adb: AdbManager, command: String): String =
