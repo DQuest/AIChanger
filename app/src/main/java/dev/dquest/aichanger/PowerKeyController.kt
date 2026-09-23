@@ -1,6 +1,7 @@
 package dev.dquest.aichanger
 
 import android.content.Context
+import android.util.Log
 import dev.dquest.aichanger.daemon.DaemonProtocol
 import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArraySet
@@ -10,6 +11,7 @@ import kotlin.concurrent.thread
 /** Сторона приложения: настройки и связь с демоном ([DaemonClient], [DaemonLauncher]). */
 object PowerKeyController {
 
+    private const val TAG = "AIChanger"
     private const val PREFS = "aichanger"
     private const val KEY_ENABLED = "enabled"
     private const val KEY_PAIRED = "paired"
@@ -199,7 +201,15 @@ object PowerKeyController {
      */
     fun startIfNeeded(context: Context) = background.execute {
         refresh()
-        if (isEnabled && isPaired && daemonVersion != BuildConfig.VERSION_CODE) AutoStartService.start(context)
+        if (isEnabled && isPaired && daemonVersion != BuildConfig.VERSION_CODE) {
+            try {
+                AutoStartService.start(context)
+            } catch (e: IllegalStateException) {
+                // Пока опрашивали демон, приложение ушло в фон, и Android не даёт запустить foreground-службу
+                // (ForegroundServiceStartNotAllowedException). Без перехвата упало бы приложение; запустим при следующем открытии.
+                Log.w(TAG, "autostart from app not allowed: $e")
+            }
+        }
     }
 
     private fun refresh() {

@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -89,13 +90,9 @@ class MainActivity : ComponentActivity(), UiActions {
     private fun isInstalled(packageName: String) =
         runCatching { packageManager.getApplicationInfo(packageName, 0) }.isSuccess
 
-    override fun openWifi() {
-        startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-    }
+    override fun openWifi() = openFirst(Intent(Settings.ACTION_WIFI_SETTINGS), Intent(Settings.ACTION_SETTINGS))
 
-    override fun openDeviceInfo() {
-        startActivity(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS))
-    }
+    override fun openDeviceInfo() = openFirst(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS), Intent(Settings.ACTION_SETTINGS))
 
     override fun startPairing() {
         // Разрешение появилось в Android 13; на 11–12 запрос сразу вернул бы «нет».
@@ -113,14 +110,16 @@ class MainActivity : ComponentActivity(), UiActions {
         // После сопряжения PairingService сам запустит перехват, если он включён.
         PowerKeyController.setEnabled(true)
         startForegroundService(Intent(this, PairingService::class.java))
-        startActivity(
-            Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-                .putExtra(":settings:fragment_args_key", "toggle_adb_wireless")
+        openFirst(
+            Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).putExtra(":settings:fragment_args_key", "toggle_adb_wireless"),
+            Intent(Settings.ACTION_SETTINGS),
         )
     }
 
-    private fun openNotificationSettings() =
-        startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+    private fun openNotificationSettings() = openFirst(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+        appDetailsIntent(),
+    )
 
     /** Без разрешения на автозапуск vivo отбрасывает загрузочную рассылку, и демон не стартует после перезагрузки. */
     override fun openAutoStart() = openVivoSettings(VIVO_PERMISSION_MANAGER, VIVO_AUTOSTART_ACTIVITY)
@@ -131,18 +130,24 @@ class MainActivity : ComponentActivity(), UiActions {
      */
     override fun openBackgroundPower() = openVivoSettings(VIVO_POWER_SAVING, VIVO_BACKGROUND_POWER_ACTIVITY)
 
-    private fun openVivoSettings(packageName: String, activity: String) {
-        try {
-            startActivity(Intent().setComponent(ComponentName(packageName, activity)))
-        } catch (_: ActivityNotFoundException) {
-            openAppDetails()
-        } catch (_: SecurityException) {
-            openAppDetails()
-        }
-    }
+    private fun openVivoSettings(packageName: String, activity: String) =
+        openFirst(Intent().setComponent(ComponentName(packageName, activity)), appDetailsIntent())
 
-    private fun openAppDetails() =
-        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+    private fun appDetailsIntent() =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+
+    /** Набор экранов настроек у прошивок разный: если нужного нет или он закрыт, открываем следующий, а не падаем. */
+    private fun openFirst(vararg intents: Intent) {
+        for (intent in intents) {
+            try {
+                startActivity(intent)
+                return
+            } catch (_: ActivityNotFoundException) {
+            } catch (_: SecurityException) {
+            }
+        }
+        Toast.makeText(this, "Не удалось открыть настройки", Toast.LENGTH_SHORT).show()
+    }
 
     override fun finishSetup() {
         PowerKeyController.setSetupDone(true)
