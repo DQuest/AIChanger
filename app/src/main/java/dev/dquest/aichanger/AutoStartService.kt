@@ -7,118 +7,162 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
  * Запускает демон кнопки после загрузки (или по кнопке «Включить») и завершается. Если Wi-Fi нет,
  * не сдаётся, а ждёт его с уведомлением: без Wi-Fi беспроводная отладка, через которую идёт запуск, не работает.
+ *
+ * Запуск идёт в своём потоке, который может пережить экземпляр службы: «Выключить» останавливает службу,
+ * а поток доходит до конца сам. Поэтому поток работает с контекстом приложения, а службу и уведомление
+ * по его окончании убирает главный поток, в котором идёт и onStartCommand: так конец запуска не разминётся
+ * с новым запросом.
  */
 class AutoStartService : Service() {
 
+    // Последний запрос этого экземпляра: остановка по нему не отменит запрос, который ещё не дошёл до onStartCommand.
+    private var lastStartId = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         PairingService.ensureChannel(this)
-        // Уже ждём Wi-Fi или запускаем: второй поток ничего не добавит, первый сам запустит демон.
-        // Уведомление оставляем текущее, иначе «Wi-Fi выключен» сменилось бы на «Запуск…».
-        val alreadyBusy = !busy.compareAndSet(false, true)
-        val shown = current?.takeIf { alreadyBusy } ?: notification("Запуск перехвата кнопки…").also { current = it }
+        // Уже ждём Wi-Fi или запускаем: уведомление оставляем текущее, иначе «Wi-Fi выключен» сменилось бы на «Запуск…».
+        val shown = current ?: notification(this, STARTING).also { current = it }
         startForeground(NOTIFICATION_ID, shown, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        if (alreadyBusy) return START_NOT_STICKY
-        thread(name = "daemon-autostart") {
-            try {
-                val result = launchWhenWifi()
-                Log.i(TAG, "autostart: $result")
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                // Об успехе не сообщаем, чтобы не мешать; об ошибке оставляем уведомление,
-                // если только перехват не выключили, пока шёл запуск.
-                result.exceptionOrNull()?.takeIf { PowerKeyController.isEnabled }
-                    ?.let { show(notification("Не удалось запустить перехват кнопки: ${it.message}")) }
-            } finally {
-                current = null
-                busy.set(false)
-                stopSelf()
-            }
-        }
+        // Поток уже идёт. Он мог решить, что запускать не нужно (перехват выключали), поэтому после него запустим ещё раз.
+        if (working) rerun = true else startWork(applicationContext)
         return START_NOT_STICKY
     }
-
-    private fun launchWhenWifi(): Result<Unit> {
-        while (true) {
-            val result = runCatching { PowerKeyController.ensureRunning(this) }
-            if (result.exceptionOrNull() !is NoWifiException) return result
-            waitForWifi()
-            // Пока ждали, перехват выключили: запускать уже не нужно, и это не ошибка.
-            if (!PowerKeyController.isEnabled) return Result.success(Unit)
-        }
-    }
-
-    private fun waitForWifi() {
-        PowerKeyController.setWaitingForWifi(true)
-        try {
-            var shownEnabled: Boolean? = null
-            while (PowerKeyController.isEnabled && !Wifi.isConnected(this)) {
-                // Текст меняется, когда Wi-Fi включили, но сеть ещё не подключилась.
-                val enabled = Wifi.isEnabled(this)
-                if (enabled != shownEnabled) {
-                    show(wifiNotification(enabled))
-                    shownEnabled = enabled
-                }
-                Wifi.awaitConnected(this, WIFI_RECHECK_MS)
-            }
-        } finally {
-            PowerKeyController.setWaitingForWifi(false)
-        }
-        show(notification("Запуск перехвата кнопки…"))
-    }
-
-    private fun show(notification: Notification) {
-        current = notification
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
-    }
-
-    private fun wifiNotification(wifiEnabled: Boolean): Notification {
-        val openWifi = PendingIntent.getActivity(
-            this, 0, Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
-        val text = "Перехват кнопки запустится сам, как только телефон подключится к Wi-Fi, " +
-            "в котором настраивали AIChanger."
-        return Notification.Builder(this, PairingService.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(if (wifiEnabled) "Wi-Fi не подключён" else "Wi-Fi выключен")
-            .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
-            .setContentIntent(PairingService.openAppIntent(this))
-            .addAction(Notification.Action.Builder(null, "Открыть Wi-Fi", openWifi).build())
-            .setOngoing(true)
-            .build()
-    }
-
-    private fun notification(text: String): Notification =
-        Notification.Builder(this, PairingService.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("AIChanger")
-            .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
-            .setContentIntent(PairingService.openAppIntent(this))
-            .build()
 
     companion object {
         private const val TAG = "AIChanger"
         private const val NOTIFICATION_ID = 2
+        private const val STARTING = "Запуск перехвата кнопки…"
         // Раз в столько перепроверяем, не включили ли Wi-Fi (подключение к сети приходит сразу, по колбэку).
         private const val WIFI_RECHECK_MS = 10_000L
-        private val busy = AtomicBoolean(false)
+
+        private val main = Handler(Looper.getMainLooper())
+        // Меняются только в главном потоке.
+        private var instance: AutoStartService? = null
+        private var working = false
+        private var rerun = false
         @Volatile private var current: Notification? = null
 
         fun start(context: Context) =
             context.startForegroundService(Intent(context, AutoStartService::class.java))
 
         fun stop(context: Context) = context.stopService(Intent(context, AutoStartService::class.java))
+
+        private fun startWork(context: Context) {
+            working = true
+            rerun = false
+            thread(name = "daemon-autostart") {
+                val result = runCatching { launchWhenWifi(context) }
+                Log.i(TAG, "autostart: $result")
+                main.post { onWorkDone(context, result) }
+            }
+        }
+
+        private fun onWorkDone(context: Context, result: Result<Unit>) {
+            if (rerun && PowerKeyController.isEnabled) {
+                startWork(context)
+                return
+            }
+            working = false
+            rerun = false
+            current = null
+            val service = instance
+            service?.stopForeground(Service.STOP_FOREGROUND_REMOVE)
+            // Об успехе не сообщаем, чтобы не мешать; об ошибке оставляем уведомление, если перехват не выключили.
+            // Иначе убираем и то, что поток успел показать уже после остановки службы.
+            val error = result.exceptionOrNull()?.takeIf { PowerKeyController.isEnabled }
+            val manager = context.getSystemService(NotificationManager::class.java)
+            if (error != null) {
+                manager.notify(NOTIFICATION_ID, notification(context, "Не удалось запустить перехват кнопки: ${error.message}"))
+            } else {
+                manager.cancel(NOTIFICATION_ID)
+            }
+            service?.let { it.stopSelfResult(it.lastStartId) }
+        }
+
+        private fun launchWhenWifi(context: Context) {
+            while (true) {
+                try {
+                    // Если перехват выключили, пока ждали Wi-Fi, ensureRunning ничего не запустит.
+                    PowerKeyController.ensureRunning(context)
+                    return
+                } catch (_: NoWifiException) {
+                    waitForWifi(context)
+                }
+            }
+        }
+
+        private fun waitForWifi(context: Context) {
+            PowerKeyController.setWaitingForWifi(true)
+            try {
+                var shownEnabled: Boolean? = null
+                while (PowerKeyController.isEnabled && !Wifi.isConnected(context)) {
+                    // Текст меняется, когда Wi-Fi включили, но сеть ещё не подключилась.
+                    val enabled = Wifi.isEnabled(context)
+                    if (enabled != shownEnabled) {
+                        show(context, wifiNotification(context, enabled))
+                        shownEnabled = enabled
+                    }
+                    Wifi.awaitConnected(context, WIFI_RECHECK_MS)
+                }
+            } finally {
+                PowerKeyController.setWaitingForWifi(false)
+            }
+            if (PowerKeyController.isEnabled) show(context, notification(context, STARTING))
+        }
+
+        private fun show(context: Context, notification: Notification) {
+            current = notification
+            context.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
+        }
+
+        private fun wifiNotification(context: Context, wifiEnabled: Boolean): Notification {
+            val openWifi = PendingIntent.getActivity(
+                context, 0, Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_IMMUTABLE,
+            )
+            val text = "Перехват кнопки запустится сам, как только телефон подключится к Wi-Fi, " +
+                "в котором настраивали AIChanger."
+            return Notification.Builder(context, PairingService.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(if (wifiEnabled) "Wi-Fi не подключён" else "Wi-Fi выключен")
+                .setContentText(text)
+                .setStyle(Notification.BigTextStyle().bigText(text))
+                .setContentIntent(PairingService.openAppIntent(context))
+                .addAction(Notification.Action.Builder(null, "Открыть Wi-Fi", openWifi).build())
+                .setOngoing(true)
+                .build()
+        }
+
+        private fun notification(context: Context, text: String): Notification =
+            Notification.Builder(context, PairingService.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("AIChanger")
+                .setContentText(text)
+                .setStyle(Notification.BigTextStyle().bigText(text))
+                .setContentIntent(PairingService.openAppIntent(context))
+                .build()
     }
 }
