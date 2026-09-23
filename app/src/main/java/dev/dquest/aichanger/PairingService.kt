@@ -44,20 +44,25 @@ class PairingService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         mdns?.stop()
+        // Порт окна сопряжения с прошлого раза уже закрыт: новое окно откроется на другом.
+        pairingPort = -1
         mdns = AdbMdns(this, AdbMdns.SERVICE_TYPE_TLS_PAIRING) { host, port ->
             if (host != null && port > 0) pairingPort = port
         }.also { it.start() }
     }
 
-    /** Код или «порт код» через пробел. Без порта ждём, пока его найдёт mDNS. */
+    /**
+     * Код или «порт код» через пробел. Без порта ждём, пока его найдёт mDNS. Порт — число перед кодом:
+     * так подходит и строка «IP-адрес и порт», вставленная целиком («192.168.1.5:37123 123456»).
+     */
     private fun onInput(input: String) {
         val numbers = Regex("\\d+").findAll(input).map { it.value }.toList()
         val code = numbers.lastOrNull()
-        if (code == null) {
-            notify("Код не введён. Введите код из окна сопряжения", withCodeInput = true)
+        if (code == null || code.length != PAIRING_CODE_LENGTH) {
+            notify("Введите шестизначный код из окна сопряжения (или порт и код через пробел)", withCodeInput = true)
             return
         }
-        val typedPort = numbers.takeIf { it.size >= 2 }?.first()?.toIntOrNull()
+        val typedPort = numbers.getOrNull(numbers.size - 2)?.toIntOrNull()?.takeIf { it in 1..65535 }
         notify("Сопряжение…")
         thread(name = "adb-pairing") {
             val port = typedPort ?: waitForPort()
@@ -130,6 +135,7 @@ class PairingService : Service() {
     companion object {
         const val CHANNEL_ID = "aichanger"
         private const val PORT_WAIT_MS = 5000L
+        private const val PAIRING_CODE_LENGTH = 6
         private const val NOTIFICATION_ID = 1
         private const val ACTION_CODE = "dev.dquest.aichanger.PAIRING_CODE"
         private const val KEY_CODE = "code"
