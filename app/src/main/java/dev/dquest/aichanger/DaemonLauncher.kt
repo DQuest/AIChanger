@@ -3,8 +3,6 @@ package dev.dquest.aichanger
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.provider.Settings
 import android.util.Log
 import dev.dquest.aichanger.daemon.DaemonProtocol
@@ -32,7 +30,7 @@ object DaemonLauncher {
     private const val ADB_WIFI_ENABLED = "adb_wifi_enabled"
     private const val DEVELOPMENT_SETTINGS_ENABLED = "development_settings_enabled"
     private const val MARKS = "launcher_marks"
-    private const val WIFI_WAIT_MS = 90_000L
+    private const val WIFI_WAIT_MS = 30_000L
     private const val CONNECT_ATTEMPTS = 5
     private const val CONNECT_TIMEOUT_MS = 15_000L
     private const val DAEMON_WAIT_MS = 10_000L
@@ -296,18 +294,9 @@ object DaemonLauncher {
             output.toString()
         }
 
+    /** После загрузки Wi-Fi подключается не сразу; дольше не ждём — ожиданием с уведомлением занимается AutoStartService. */
     private fun waitForWifi(context: Context) {
-        val connectivity = context.getSystemService(ConnectivityManager::class.java)
-        val deadline = System.currentTimeMillis() + WIFI_WAIT_MS
-        while (System.currentTimeMillis() < deadline) {
-            @Suppress("DEPRECATION") // для беспроводной отладки Wi-Fi не обязан быть основной сетью
-            val wifi = connectivity.allNetworks.any {
-                connectivity.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-            }
-            if (wifi) return
-            Thread.sleep(POLL_MS)
-        }
-        error("нет подключения к Wi-Fi")
+        if (!Wifi.awaitConnected(context, WIFI_WAIT_MS)) throw NoWifiException()
     }
 
     private fun waitForDaemon(token: String): Boolean {

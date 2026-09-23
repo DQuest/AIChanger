@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import dev.dquest.aichanger.Assistant
 import dev.dquest.aichanger.BuildConfig
 import dev.dquest.aichanger.PowerKeyController
+import dev.dquest.aichanger.Wifi
 
 /** Снимок состояния для экрана: [PowerKeyController] не наблюдаемый, поэтому экран перечитывает его по сигналу. */
 @Immutable
@@ -17,6 +18,8 @@ data class UiState(
     val developerOptions: Boolean,
     val running: Boolean,
     val launching: Boolean,
+    val waitingForWifi: Boolean,
+    val wifiEnabled: Boolean,
     val error: String?,
     val assistant: String,
     val voice: Boolean,
@@ -35,6 +38,8 @@ data class UiState(
                 running = version == BuildConfig.VERSION_CODE,
                 // Демон прежней версии сейчас заменят новым: для пользователя это тот же запуск.
                 launching = PowerKeyController.launching || (version != null && version != BuildConfig.VERSION_CODE),
+                waitingForWifi = PowerKeyController.waitingForWifi,
+                wifiEnabled = Wifi.isEnabled(context),
                 error = PowerKeyController.lastLaunchError,
                 assistant = PowerKeyController.assistant,
                 voice = PowerKeyController.isVoiceMode,
@@ -52,6 +57,7 @@ interface UiActions {
     fun openDeviceInfo()
     fun startPairing()
     fun openAutoStart()
+    fun openWifi()
     fun finishSetup()
     fun restartSetup()
     fun enable()

@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Отличить выключенный Wi-Fi от неподключённого в уведомлении об ожидании сети. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Приложение выдаёт его себе само через свой adb при первом запуске (pm grant). -->
     <uses-permission
         android:name="android.permission.WRITE_SECURE_SETTINGS"

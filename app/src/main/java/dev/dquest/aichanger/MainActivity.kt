@@ -84,6 +84,10 @@ class MainActivity : ComponentActivity(), UiActions {
     private fun isInstalled(packageName: String) =
         runCatching { packageManager.getApplicationInfo(packageName, 0) }.isSuccess
 
+    override fun openWifi() {
+        startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+    }
+
     override fun openDeviceInfo() {
         startActivity(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS))
     }

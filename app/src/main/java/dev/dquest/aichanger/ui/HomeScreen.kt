@@ -81,7 +81,7 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
     val error = state.error
     val (container, content) = when {
         state.running -> status.successContainer to status.onSuccessContainer
-        state.enabled && !state.launching && error != null -> scheme.errorContainer to scheme.onErrorContainer
+        state.enabled && !state.launching && !state.waitingForWifi && error != null -> scheme.errorContainer to scheme.onErrorContainer
         else -> scheme.surfaceContainerHighest to scheme.onSurface
     }
     Card(colors = CardDefaults.cardColors(containerColor = container, contentColor = content)) {
@@ -96,6 +96,7 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                 ) {
                     when {
                         state.running -> StatusIcon(R.drawable.ic_status_ok)
+                        state.waitingForWifi -> StatusIcon(R.drawable.ic_status_wifi)
                         state.launching -> CircularProgressIndicator(Modifier.size(22.dp), color = content, strokeWidth = 2.dp)
                         state.enabled && error != null -> StatusIcon(R.drawable.ic_status_error)
                         else -> StatusIcon(R.drawable.ic_status_power)
@@ -105,6 +106,8 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                 Column(Modifier.weight(1f)) {
                     val (title, subtitle) = when {
                         state.running -> "Работает" to "Удерживайте кнопку питания — откроется ${assistantLabel ?: "ассистент"}"
+                        state.waitingForWifi -> (if (state.wifiEnabled) "Ждёт Wi-Fi" else "Wi-Fi выключен") to
+                            "Перехват запустится сам, как только телефон подключится к Wi-Fi, в котором настраивали AIChanger"
                         state.launching -> "Запускается…" to "Это займёт несколько секунд"
                         !state.enabled -> "Выключено" to "Кнопка питания работает как обычно"
                         error != null -> "Не запустилось" to friendlyError(error)
@@ -116,6 +119,7 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
             }
             when {
                 !state.enabled -> ActionButton("Включить", actions::enable)
+                state.waitingForWifi -> ActionButton("Открыть Wi-Fi", actions::openWifi)
                 !state.running && !state.launching && error != null -> ActionButton("Повторить", actions::enable)
             }
         }

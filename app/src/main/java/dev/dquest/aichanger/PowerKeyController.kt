@@ -33,6 +33,14 @@ object PowerKeyController {
         private set
     @Volatile var launching = false
         private set
+    /** Запуск отложен до подключения к Wi-Fi: его ждёт [AutoStartService] с уведомлением. */
+    @Volatile var waitingForWifi = false
+        private set
+
+    fun setWaitingForWifi(value: Boolean) {
+        waitingForWifi = value
+        notifyListeners()
+    }
 
     fun init(context: Context) {
         storage = context.applicationContext.createDeviceProtectedStorageContext()
@@ -137,6 +145,8 @@ object PowerKeyController {
     fun disable(context: Context) {
         setEnabled(false)
         val appContext = context.applicationContext
+        // Если запуск ждал Wi-Fi, ждать больше нечего: убираем службу вместе с её уведомлением.
+        AutoStartService.stop(appContext)
         background.execute {
             val restored = DaemonClient.stop(token) != null ||
                 runCatching { DaemonLauncher.restoreSystem(appContext, restoreRole) }.isSuccess
