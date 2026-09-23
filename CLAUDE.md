@@ -80,6 +80,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - ChatGPT: `AssistantProxyActivity` при прямом запуске сразу закрывается, работает только как системный ассистент.
   Claude, Perplexity и Алиса при прямом запуске открывают свою панель и сразу слушают.
 - USB-отладка в OriginOS продолжает работать и при выключенных параметрах разработчика.
+- Кроме кнопки питания, ассистента на OriginOS ничто не вызывает: удержание нижнего бара или «Домой» — только BlueLM
+  (`global system_navigation_wake_up_switch`), без него ничего не происходит, даже с `secure assist_long_press_home_enabled=1`
+  и `assist_touch_gesture_enabled=1`. Поэтому роль системного ассистента нужна только ChatGPT.
+- Claude в роли системного ассистента на `KEYCODE_ASSIST` ничего не показывает (служба привязана), только прямой запуск.
+  ChatGPT, Perplexity и Алиса в роли открывают свою панель.
 
 ## Отладка
 
