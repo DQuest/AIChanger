@@ -27,6 +27,7 @@ data class UiState(
     /** Демон работает, но кнопку не перехватывает. */
     val problem: String?,
     val assistant: String,
+    val changedSystemAssistant: Boolean,
     val voice: Boolean,
     val details: String?,
 ) {
@@ -49,6 +50,7 @@ data class UiState(
                 error = PowerKeyController.lastLaunchError,
                 problem = PowerKeyController.daemonProblem,
                 assistant = PowerKeyController.assistant,
+                changedSystemAssistant = PowerKeyController.changedSystemAssistant,
                 voice = PowerKeyController.isVoiceMode,
                 details = PowerKeyController.daemonStatus,
             )

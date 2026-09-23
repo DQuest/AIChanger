@@ -81,6 +81,9 @@ object PowerKeyController {
     private val restoreRole: String?
         get() = prefs.getString(KEY_RESTORE_ROLE, null)?.takeIf(DaemonProtocol::isValidRestore)
 
+    /** Демон поменял системного ассистента ради выбранного и вернёт прежнего при выключении. */
+    val changedSystemAssistant: Boolean get() = restoreRole != null
+
     val isDaemonRunning: Boolean get() = daemonVersion != null
 
     /** Секрет для команд демону, который запущен последним. */

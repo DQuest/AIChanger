@@ -6,10 +6,7 @@ import android.service.voice.VoiceInteractionService
 import dev.dquest.aichanger.daemon.DaemonProtocol
 
 /** Ассистент, которого можно вызывать кнопкой: [target] в формате [DaemonProtocol.ASSISTANT]. */
-data class Assistant(val label: String, val target: String) {
-    /** Вызов через роль системного ассистента: при выборе меняется системный ассистент телефона. */
-    val changesSystemAssistant get() = !DaemonProtocol.isDirect(target) && target != DaemonProtocol.GOOGLE_APP
-}
+data class Assistant(val label: String, val target: String)
 
 object Assistants {
 

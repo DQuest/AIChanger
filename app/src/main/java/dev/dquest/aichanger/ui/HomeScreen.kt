@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import dev.dquest.aichanger.Assistants
 import dev.dquest.aichanger.BuildConfig
 import dev.dquest.aichanger.R
+import dev.dquest.aichanger.daemon.DaemonProtocol
 
 @Composable
 fun HomeScreen(state: UiState, assistants: List<AssistantItem>, actions: UiActions) {
@@ -66,7 +67,7 @@ fun HomeScreen(state: UiState, assistants: List<AssistantItem>, actions: UiActio
                 Text("AIChanger", style = MaterialTheme.typography.titleLarge)
             }
             StatusCard(state, selected?.assistant?.label, actions)
-            AssistantCard(assistants, state.assistant, actions)
+            AssistantCard(assistants, state.assistant, state.changedSystemAssistant, actions)
             if (state.assistant == Assistants.GEMINI.target) GeminiModeCard(state.voice, actions)
             TipCard()
             Footer(state, actions)
@@ -152,7 +153,12 @@ private fun friendlyError(error: String): String = when {
 }
 
 @Composable
-private fun AssistantCard(assistants: List<AssistantItem>, selected: String, actions: UiActions) {
+private fun AssistantCard(
+    assistants: List<AssistantItem>,
+    selected: String,
+    changedSystemAssistant: Boolean,
+    actions: UiActions,
+) {
     SectionCard("Ассистент") {
         if (assistants.isEmpty()) {
             Text(
@@ -180,11 +186,14 @@ private fun AssistantCard(assistants: List<AssistantItem>, selected: String, act
                 RadioButton(selected = isSelected, onClick = null)
             }
         }
+        // Показываем, только если демон действительно поменял ассистента телефона: для Gemini это нужно,
+        // лишь когда системным ассистентом был не Google.
         val current = assistants.firstOrNull { it.assistant.target == selected }?.assistant
-        if (current?.changesSystemAssistant == true) {
+        if (current != null && !DaemonProtocol.isDirect(current.target) && changedSystemAssistant) {
+            val why = if (current == Assistants.GEMINI) "Gemini вызывается через ассистента телефона, поэтому AIChanger назначил им Google."
+            else "${current.label} работает только как ассистент телефона, поэтому AIChanger назначил его им."
             Text(
-                "${current.label} работает только как ассистент телефона, поэтому AIChanger назначил его им. " +
-                    "Прежний вернётся, если выбрать другого или выключить AIChanger.",
+                "$why Прежний вернётся, если выбрать другого или выключить AIChanger.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp),
