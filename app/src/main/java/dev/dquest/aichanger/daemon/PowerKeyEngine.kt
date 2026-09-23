@@ -247,8 +247,9 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         // может закрыться сама (мелькнёт только рамка). Тогда вызываем ещё раз.
         repeat(ASSIST_ATTEMPTS) {
             if (cancelled(id)) return
+            val before = if (isGemini(target)) topActivity() else ""
             launchAssistant(target)
-            if (waitForAssistant(target)) {
+            if (waitForAssistant(target, before)) {
                 fired++
                 return
             }
@@ -269,17 +270,25 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         }
     }
 
-    private fun waitForAssistant(target: String): Boolean {
+    /** [before] — верхняя activity до вызова, нужна только для Gemini. */
+    private fun waitForAssistant(target: String, before: String): Boolean {
         // Приложения других ассистентов при холодном старте открываются дольше панели Gemini.
-        val (marker, waitMs) = if (isGemini(target)) GEMINI_ACTIVITY to GEMINI_WAIT_MS
-        else DaemonProtocol.assistantPackage(target) + "/" to APP_WAIT_MS
+        val waitMs = if (isGemini(target)) GEMINI_WAIT_MS else APP_WAIT_MS
         val deadline = System.currentTimeMillis() + waitMs
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(UNLOCK_POLL_MS)
-            if (topActivity().contains(marker)) return true
+            if (isOpened(target, topActivity(), before)) return true
         }
         return false
     }
+
+    /**
+     * Панель Gemini узнаём по её activity, а если Google её переименует — по любой activity Google, появившейся
+     * после вызова. Иначе каждое удержание слало бы ASSIST трижды, открывая и закрывая панель.
+     */
+    private fun isOpened(target: String, top: String, before: String) =
+        if (isGemini(target)) GEMINI_ACTIVITY in top || (GOOGLE_ACTIVITY in top && top != before)
+        else DaemonProtocol.assistantPackage(target) + "/" in top
 
     private fun isGemini(target: String) = target == DaemonProtocol.GOOGLE_APP
 
@@ -288,9 +297,13 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
     private fun isKeyguardShowing() = sh("dumpsys window | grep -m1 isKeyguardShowing").contains("=true")
 
     private fun waitForUnlock(id: Int): Boolean {
-        val deadline = System.currentTimeMillis() + UNLOCK_TIMEOUT_MS
+        val start = System.currentTimeMillis()
+        val deadline = start + UNLOCK_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
-            Thread.sleep(UNLOCK_POLL_MS)
+            // Лицо и отпечаток срабатывают за секунду-две: тогда проверяем часто, чтобы ассистент открылся сразу.
+            // Дальше (вводят PIN) — реже: каждый полный dumpsys window заметно нагружает system_server.
+            val fast = System.currentTimeMillis() - start < FAST_UNLOCK_MS
+            Thread.sleep(if (fast) UNLOCK_POLL_MS else SLOW_UNLOCK_POLL_MS)
             if (cancelled(id)) return false
             if (!isKeyguardShowing()) return true
         }
@@ -352,10 +365,13 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         const val RESTART_DELAY_MS = 2000L
         const val UNLOCK_TIMEOUT_MS = 15_000L
         const val UNLOCK_POLL_MS = 150L
+        const val FAST_UNLOCK_MS = 2000L
+        const val SLOW_UNLOCK_POLL_MS = 500L
         const val UNLOCK_SETTLE_MS = 300L
         const val ASSIST_ATTEMPTS = 3
         const val GEMINI_WAIT_MS = 1500L
         const val APP_WAIT_MS = 3000L
         const val GEMINI_ACTIVITY = "googlequicksearchbox/com.google.android.apps.search.assistant.surfaces.voice.robin.ui.floaty.activity.FloatyActivity"
+        const val GOOGLE_ACTIVITY = DaemonProtocol.GOOGLE_APP + "/"
     }
 }
