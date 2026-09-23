@@ -80,8 +80,7 @@ fun SetupWizard(state: UiState, actions: UiActions) {
                     body = "AIChanger не меняет настройки BlueLM. Если BlueLM тоже вызывается удержанием кнопки питания, " +
                         "откроются оба ассистента. Найдите в настройках телефона BlueLM (蓝心小V) и выключите его вызов " +
                         "кнопкой питания. Если потом выключите AIChanger, BlueLM можно будет включить там же.",
-                    primary = "Открыть настройки" to actions::openSettings,
-                    secondary = "Готово" to { blueLmDone = true },
+                    primary = "Готово, выключил" to { blueLmDone = true },
                 )
                 2 -> Step(
                     title = "Включите параметры разработчика",
