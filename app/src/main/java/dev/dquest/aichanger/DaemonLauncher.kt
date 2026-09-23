@@ -213,43 +213,50 @@ object DaemonLauncher {
     private fun findOpenPorts(ports: IntRange): List<Int> {
         val open = mutableListOf<Int>()
         Selector.open().use { selector ->
-            for (batch in ports.chunked(SCAN_BATCH)) {
-                // Считаем незавершённые сами: отменённые ключи остаются в selector.keys() до следующего select.
-                var pending = 0
-                for (port in batch) {
-                    val channel = SocketChannel.open().apply { configureBlocking(false) }
-                    try {
-                        if (channel.connect(InetSocketAddress(LOOPBACK, port))) {
-                            open += port
+            try {
+                for (batch in ports.chunked(SCAN_BATCH)) {
+                    // Считаем незавершённые сами: отменённые ключи остаются в selector.keys() до следующего select.
+                    var pending = 0
+                    for (port in batch) {
+                        val channel = SocketChannel.open()
+                        try {
+                            channel.configureBlocking(false)
+                            if (channel.connect(InetSocketAddress(LOOPBACK, port))) {
+                                open += port
+                                channel.close()
+                            } else {
+                                channel.register(selector, SelectionKey.OP_CONNECT, port)
+                                pending++
+                            }
+                        } catch (_: IOException) {
                             channel.close()
-                        } else {
-                            channel.register(selector, SelectionKey.OP_CONNECT, port)
-                            pending++
                         }
-                    } catch (_: IOException) {
-                        channel.close()
                     }
-                }
-                val deadline = System.currentTimeMillis() + SCAN_CONNECT_TIMEOUT_MS
-                while (pending > 0) {
-                    val left = deadline - System.currentTimeMillis()
-                    if (left <= 0) break
-                    selector.select(left)
-                    for (key in selector.selectedKeys()) {
-                        val channel = key.channel() as SocketChannel
-                        if (runCatching { channel.finishConnect() }.getOrDefault(false)) open += key.attachment() as Int
+                    val deadline = System.currentTimeMillis() + SCAN_CONNECT_TIMEOUT_MS
+                    while (pending > 0) {
+                        val left = deadline - System.currentTimeMillis()
+                        if (left <= 0) break
+                        selector.select(left)
+                        for (key in selector.selectedKeys()) {
+                            val channel = key.channel() as SocketChannel
+                            if (runCatching { channel.finishConnect() }.getOrDefault(false)) open += key.attachment() as Int
+                            key.cancel()
+                            channel.close()
+                            pending--
+                        }
+                        selector.selectedKeys().clear()
+                    }
+                    // Не ответившие за отведённое время закрываем; selectNow снимает отменённые ключи.
+                    for (key in selector.keys()) {
                         key.cancel()
-                        channel.close()
-                        pending--
+                        key.channel().close()
                     }
-                    selector.selectedKeys().clear()
+                    selector.selectNow()
                 }
-                // Не ответившие за отведённое время закрываем; selectNow снимает отменённые ключи.
-                for (key in selector.keys()) {
-                    key.cancel()
-                    key.channel().close()
-                }
-                selector.selectNow()
+            } finally {
+                // Если SocketChannel.open() упал (например, кончились дескрипторы), закрываем уже открытые:
+                // закрытие селектора сами каналы не закрывает, и они висели бы до сборки мусора.
+                for (key in selector.keys()) key.channel().close()
             }
         }
         return open
