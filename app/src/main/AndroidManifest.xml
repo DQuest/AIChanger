@@ -27,8 +27,11 @@
         <package android:name="com.google.android.apps.bard" />
     </queries>
 
+    <!-- Без резервных копий и переноса: см. data_extraction_rules.xml (там Android 12+, здесь Android 11). -->
     <application
         android:name=".App"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:directBootAware="true"
         android:icon="@mipmap/ic_launcher"
         android:label="AIChanger"
