@@ -34,8 +34,10 @@ class AutoStartService : Service() {
                 val result = launchWhenWifi()
                 Log.i(TAG, "autostart: $result")
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                // Об успехе не сообщаем, чтобы не мешать; об ошибке оставляем уведомление.
-                result.exceptionOrNull()?.let { show(notification("Не удалось запустить перехват кнопки: ${it.message}")) }
+                // Об успехе не сообщаем, чтобы не мешать; об ошибке оставляем уведомление,
+                // если только перехват не выключили, пока шёл запуск.
+                result.exceptionOrNull()?.takeIf { PowerKeyController.isEnabled }
+                    ?.let { show(notification("Не удалось запустить перехват кнопки: ${it.message}")) }
             } finally {
                 current = null
                 busy.set(false)

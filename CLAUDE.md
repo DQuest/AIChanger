@@ -44,6 +44,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Меняете код демона — поднимайте `versionCode`** в `app/build.gradle.kts`. Приложение перезапускает демон, только если `ping` вернул другую версию.
 - Код в `daemon/` работает вне приложения: там нет `Context`, Android API доступны только те, что работают из `app_process`
   с uid shell. Системные действия выполняются shell-командами (`sh(...)`).
+- К порту демона может подключиться любое приложение. Всё, что пришло по протоколу (пакеты, activity), демон проверяет
+  (`DaemonProtocol.isValidTarget`/`isValidRestore`) и передаёт в команды только через `exec(listOf(...))`, не через `sh`.
+  Токен новый при каждом запуске демона (`PowerKeyController.newToken`).
+- Необработанное исключение в любом потоке демона убивает весь процесс (`app_process` ставит `KillApplicationHandler`),
+  и BlueLM остаётся выключенным. Код в потоках демона ловит всё сам.
+- Запуск (`ensureRunning`) и остановка (`stopDaemon`) идут под одним локом `PowerKeyController`: остановка службы
+  не прерывает её поток, а `AdbManager` общий.
 - Всё, что нужно до первой разблокировки, должно быть `directBootAware` **на каждом компоненте** (флаг у `<application>`
   на компоненты не распространяется) и хранить данные в `createDeviceProtectedStorageContext()`.
 - Команда запуска демона через libadb должна заканчиваться `& sleep 1`: `shell:` идёт через PTY, и без паузы фоновый

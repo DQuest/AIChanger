@@ -54,22 +54,35 @@ object DaemonLauncher {
     fun canWriteSecureSettings(context: Context) =
         context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
 
-    /** Выполняется в фоновом потоке, бросает исключение с понятным текстом при ошибке. */
-    fun launch(context: Context, token: String, voice: Boolean) {
+    /**
+     * Выполняется в фоновом потоке, бросает исключение с понятным текстом при ошибке.
+     * [newToken] вызывается перед самой командой запуска: если до неё не дошло (нет Wi-Fi, не подключились),
+     * прежний демон продолжает работать со старым токеном, и приложение по-прежнему может его остановить.
+     */
+    fun launch(context: Context, voice: Boolean, newToken: () -> String) {
+        lateinit var token: String
         withWirelessAdb(context) { adb ->
             if (!canWriteSecureSettings(context)) {
                 shell(adb, "pm grant ${context.packageName} ${Manifest.permission.WRITE_SECURE_SETTINGS}")
             }
+            token = newToken()
             Log.i(TAG, "daemon launch: ${shell(adb, launchCommand(context, token, voice))}")
         }
         check(waitForDaemon(token)) { "демон не ответил после запуска" }
     }
 
-    /** Возвращает BlueLM на кнопку и прежнего системного ассистента, когда демона, который сделал бы это сам, уже нет. */
+    /**
+     * Возвращает BlueLM на кнопку и прежнего системного ассистента, когда демон не ответил на `stop`.
+     * Демон при этом мог и работать, но не принять токен, поэтому сначала его завершаем.
+     */
     fun restoreSystem(context: Context, restoreRole: String?) {
         withWirelessAdb(context) { adb ->
+            shell(adb, killCommand(context))
             shell(adb, DaemonProtocol.blueLmCommand(true))
-            restoreRole?.let { shell(adb, DaemonProtocol.assistantRoleCommand(it)) }
+            // Строку собирает оболочка adb, поэтому пропускаем только имя пакета.
+            restoreRole?.takeIf(DaemonProtocol::isValidRestore)?.let {
+                shell(adb, DaemonProtocol.assistantRoleArgs(it).joinToString(" "))
+            }
         }
     }
 
@@ -112,12 +125,14 @@ object DaemonLauncher {
      */
     private fun launchCommand(context: Context, token: String, voice: Boolean): String {
         val mode = if (voice) DaemonProtocol.MODE_VOICE else DaemonProtocol.MODE_WINDOW
-        return "for n in ${DaemonProtocol.PROCESS_NAME} ${context.packageName}:powerkey; do " +
-            "p=\$(pidof \$n) && kill \$p; done; sleep 0.3; " +
+        return "${killCommand(context)}; sleep 0.3; " +
             "CLASSPATH=${context.applicationInfo.sourceDir} setsid app_process /system/bin " +
             "--nice-name=${DaemonProtocol.PROCESS_NAME} ${PowerKeyDaemon::class.java.name} $token $mode " +
             "</dev/null >/dev/null 2>&1 & sleep 1"
     }
+
+    private fun killCommand(context: Context) =
+        "for n in ${DaemonProtocol.PROCESS_NAME} ${context.packageName}:powerkey; do p=\$(pidof \$n) && kill \$p; done"
 
     private fun withAdb(context: Context, block: (AdbManager) -> Unit) {
         val adb = AdbManager.get(context)

@@ -86,8 +86,10 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         } else {
             val holder = sh(DaemonProtocol.GET_ASSISTANT_ROLE).lineSequence().firstOrNull()?.trim().orEmpty()
             if (holder != target) {
-                if (restoreRole == null) restoreRole = holder.ifEmpty { DaemonProtocol.NO_ASSISTANT }
-                sh(DaemonProtocol.assistantRoleCommand(target))
+                if (restoreRole == null) {
+                    restoreRole = holder.ifEmpty { DaemonProtocol.NO_ASSISTANT }.takeIf(DaemonProtocol::isValidRestore)
+                }
+                exec(DaemonProtocol.assistantRoleArgs(target))
             }
             if (restoreRole == target) restoreRole = null
         }
@@ -98,7 +100,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
     @Synchronized
     fun restoreAssistantRole() {
         val previous = restoreRole ?: return
-        sh(DaemonProtocol.assistantRoleCommand(previous))
+        exec(DaemonProtocol.assistantRoleArgs(previous))
         restoreRole = null
     }
 
@@ -183,17 +185,17 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
     }
 
     private fun launchAssistant(target: String) {
-        sh(
-            when {
-                // Прямой запуск клавиш не нажимает, поэтому нажатие питания помечаем обработанным через
-                // KEYCODE_WAKEUP (на включённом экране ничего не делает), иначе отпускание погасит экран.
-                DaemonProtocol.isDirect(target) ->
-                    "input keyevent KEYCODE_WAKEUP; am start -a android.intent.action.ASSIST -n $target >/dev/null"
-                // Голосовая клавиша всегда открывает Google, поэтому для других системных ассистентов только ASSIST.
-                isGemini(target) && voiceMode -> "input keyevent KEYCODE_VOICE_ASSIST"
-                else -> "input keyevent KEYCODE_ASSIST"
+        when {
+            // Прямой запуск клавиш не нажимает, поэтому нажатие питания помечаем обработанным через
+            // KEYCODE_WAKEUP (на включённом экране ничего не делает), иначе отпускание погасит экран.
+            DaemonProtocol.isDirect(target) -> {
+                sh("input keyevent KEYCODE_WAKEUP")
+                exec(listOf("am", "start", "-a", "android.intent.action.ASSIST", "-n", target))
             }
-        )
+            // Голосовая клавиша всегда открывает Google, поэтому для других системных ассистентов только ASSIST.
+            isGemini(target) && voiceMode -> sh("input keyevent KEYCODE_VOICE_ASSIST")
+            else -> sh("input keyevent KEYCODE_ASSIST")
+        }
     }
 
     private fun waitForAssistant(target: String): Boolean {
@@ -237,8 +239,12 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         return null
     }
 
-    private fun sh(command: String): String {
-        val process = ProcessBuilder("sh", "-c", command).redirectErrorStream(true).start()
+    /** Только для постоянных команд: строку разбирает оболочка. */
+    private fun sh(command: String) = exec(listOf("sh", "-c", command))
+
+    /** Без оболочки: имена пакетов и классов от приложения передаются отдельными аргументами. */
+    private fun exec(command: List<String>): String {
+        val process = ProcessBuilder(command).redirectErrorStream(true).start()
         val output = process.inputStream.bufferedReader().readText()
         process.waitFor()
         return output

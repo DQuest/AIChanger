@@ -5,6 +5,7 @@ import dev.dquest.aichanger.daemon.DaemonProtocol
 import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
+import kotlin.concurrent.thread
 
 /** Сторона приложения: настройки и связь с демоном ([DaemonClient], [DaemonLauncher]). */
 object PowerKeyController {
@@ -70,15 +71,21 @@ object PowerKeyController {
     val assistant: String get() = prefs.getString(KEY_ASSISTANT, null) ?: Assistants.GEMINI.target
 
     /** Кого вернуть системным ассистентом при выключении; хранится, потому что демон после перезагрузки его не знает. */
-    private val restoreRole: String? get() = prefs.getString(KEY_RESTORE_ROLE, null)
+    private val restoreRole: String?
+        get() = prefs.getString(KEY_RESTORE_ROLE, null)?.takeIf(DaemonProtocol::isValidRestore)
 
     val isDaemonRunning: Boolean get() = daemonVersion != null
 
-    /** Секрет для команд демону; передаётся ему при запуске. */
-    private val token: String
-        get() = prefs.getString(KEY_TOKEN, null) ?: ByteArray(16).also { SecureRandom().nextBytes(it) }
-            .joinToString("") { "%02x".format(it) }
-            .also { prefs.edit().putString(KEY_TOKEN, it).apply() }
+    /** Секрет для команд демону, который запущен последним. */
+    private val token: String get() = prefs.getString(KEY_TOKEN, null) ?: newToken()
+
+    /**
+     * Токен уходит открытым текстом тому, кто слушает порт демона, а пока демона нет, порт может занять любое
+     * приложение. Поэтому каждый демон получает новый токен: перехваченный подходит только к уже неработающему.
+     */
+    private fun newToken(): String = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        .joinToString("") { "%02x".format(it) }
+        .also { prefs.edit().putString(KEY_TOKEN, it).commit() }
 
     fun setPaired(value: Boolean) {
         prefs.edit().putBoolean(KEY_PAIRED, value).apply()
@@ -109,17 +116,22 @@ object PowerKeyController {
 
     /** Передаёт выбор демону и запоминает, кого он велит вернуть системным ассистентом при выключении. */
     private fun applyAssistant() {
-        val reply = DaemonClient.setAssistant(token, assistant, restoreRole) ?: return
-        prefs.edit().putString(KEY_RESTORE_ROLE, reply.takeIf { it != DaemonProtocol.NONE }).apply()
+        when (val reply = DaemonClient.setAssistant(token, assistant, restoreRole) ?: return) {
+            DaemonProtocol.NONE -> prefs.edit().remove(KEY_RESTORE_ROLE).apply()
+            // DaemonProtocol.INVALID и прочее не сохраняем: демон выбор не принял, прежнее значение в силе.
+            else -> if (DaemonProtocol.isValidRestore(reply)) prefs.edit().putString(KEY_RESTORE_ROLE, reply).apply()
+        }
     }
 
     /**
      * Блокирующий вызов: убеждается, что работает демон этой версии, иначе запускает его заново.
-     * Бросает исключение с понятным текстом, если запустить не удалось. Вызовы не пересекаются:
-     * второй дождётся первого и увидит уже работающий демон.
+     * Бросает исключение с понятным текстом, если запустить не удалось. Вызовы не пересекаются
+     * друг с другом и с остановкой ([stopDaemon]): второй дождётся первого и увидит уже работающий демон.
      */
     @Synchronized
     fun ensureRunning(context: Context) {
+        // Пока ждали лок, перехват могли выключить: тогда запускать нечего.
+        if (!isEnabled) return
         launching = true
         notifyListeners()
         try {
@@ -127,7 +139,7 @@ object PowerKeyController {
                 DaemonClient.setVoiceMode(token, isVoiceMode)
             } else {
                 check(isPaired) { "сначала выполните сопряжение с беспроводной отладкой" }
-                DaemonLauncher.launch(context, token, isVoiceMode)
+                DaemonLauncher.launch(context, isVoiceMode, ::newToken)
             }
             // Демон после запуска вызывает Gemini, а выбранного ассистента узнаёт только отсюда.
             applyAssistant()
@@ -147,12 +159,25 @@ object PowerKeyController {
         val appContext = context.applicationContext
         // Если запуск ждал Wi-Fi, ждать больше нечего: убираем службу вместе с её уведомлением.
         AutoStartService.stop(appContext)
-        background.execute {
-            val restored = DaemonClient.stop(token) != null ||
-                runCatching { DaemonLauncher.restoreSystem(appContext, restoreRole) }.isSuccess
-            if (restored) prefs.edit().remove(KEY_RESTORE_ROLE).apply()
+        // Свой поток, а не background: ожидание идущего запуска может занять минуты, а экран должен обновляться.
+        thread(name = "daemon-stop") {
+            stopDaemon(appContext)
             refresh()
         }
+    }
+
+    /**
+     * Под тем же локом, что и [ensureRunning]. Остановка службы не прерывает её поток: без лока идущий запуск
+     * поднял бы демон уже после выключения, а два adb-сеанса с общим [AdbManager] мешали бы друг другу.
+     */
+    @Synchronized
+    private fun stopDaemon(context: Context) {
+        // Пока ждали, перехват снова включили: останавливать нечего.
+        if (isEnabled) return
+        // Пустой ответ бывает, когда демон закрыл соединение, ничего не сделав (например, все его потоки заняты).
+        val restored = DaemonClient.stop(token) == DaemonProtocol.OK ||
+            runCatching { DaemonLauncher.restoreSystem(context, restoreRole) }.isSuccess
+        if (restored) prefs.edit().remove(KEY_RESTORE_ROLE).apply()
     }
 
     fun refreshAsync() = background.execute { refresh() }

@@ -2,7 +2,8 @@ package dev.dquest.aichanger.daemon
 
 /**
  * Протокол между приложением и демоном: TCP на 127.0.0.1, одна строка `<токен> <команда> [аргумент]`,
- * ответ текстом до закрытия соединения. Токен приложение передаёт демону при запуске.
+ * ответ текстом до закрытия соединения. Токен приложение передаёт демону при запуске, каждый раз новый:
+ * порт занять может кто угодно, и токен, отправленный ему, пока демона нет, к следующему демону не подойдёт.
  */
 object DaemonProtocol {
     const val HOST = "127.0.0.1"
@@ -37,12 +38,28 @@ object DaemonProtocol {
 
     fun assistantPackage(assistant: String) = assistant.substringBefore('/')
 
-    fun assistantRoleCommand(packageName: String) =
-        if (packageName == NO_ASSISTANT) "cmd role clear-role-holders $ASSISTANT_ROLE 0"
-        else "cmd role add-role-holder $ASSISTANT_ROLE $packageName 0"
+    // Демон работает с uid shell и подставляет эти имена в команды cmd и am, поэтому принимает только
+    // настоящие имена пакетов и классов: никаких пробелов, кавычек и символов оболочки.
+    private val PACKAGE_NAME = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
+    private val CLASS_NAME = Regex("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*")
+
+    /** Годится ли [assistant] как кого вызывать: пакет или `пакет/класс`. */
+    fun isValidTarget(assistant: String) =
+        PACKAGE_NAME.matches(assistantPackage(assistant)) &&
+            (!isDirect(assistant) || CLASS_NAME.matches(assistant.substringAfter('/')))
+
+    /** Годится ли [packageName] как кого вернуть системным ассистентом: пакет или [NO_ASSISTANT]. */
+    fun isValidRestore(packageName: String) = packageName == NO_ASSISTANT || PACKAGE_NAME.matches(packageName)
+
+    /** Команда отдельными аргументами; [packageName] должен пройти [isValidRestore]. */
+    fun assistantRoleArgs(packageName: String) =
+        if (packageName == NO_ASSISTANT) listOf("cmd", "role", "clear-role-holders", ASSISTANT_ROLE, "0")
+        else listOf("cmd", "role", "add-role-holder", ASSISTANT_ROLE, packageName, "0")
 
     const val OK = "ok"
     const val DENIED = "denied"
+    /** Ответ на [ASSISTANT] с недопустимыми аргументами: выбор не принят. */
+    const val INVALID = "invalid"
 
     /**
      * Shell-команда, возвращающая или убирающая BlueLM с кнопки питания.

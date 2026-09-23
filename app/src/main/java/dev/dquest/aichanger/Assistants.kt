@@ -39,7 +39,7 @@ object Assistants {
             val target = if (assistActivity == null || packageName in ROLE_ONLY) packageName
             else "$packageName/${assistActivity.name}"
             Assistant(label, target)
-        }.sortedBy { it.label.lowercase() }
+        }.filter { DaemonProtocol.isValidTarget(it.target) }.sortedBy { it.label.lowercase() }
         return listOfNotNull(GEMINI.takeIf { DaemonProtocol.GOOGLE_APP in packages }) + others
     }
 
