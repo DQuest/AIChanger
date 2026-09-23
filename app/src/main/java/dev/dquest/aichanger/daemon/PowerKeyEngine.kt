@@ -207,8 +207,12 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         pendingMenu?.cancel(false)
     }
 
-    /** Ассистент для нажатия [id] уже не нужен: открыто меню питания или это сочетание клавиш. */
-    private fun cancelled(id: Int) = menuPress == id || chordPress == id
+    /**
+     * Ассистент для нажатия [id] уже не нужен: открыто меню питания, это сочетание клавиш или кнопку нажали снова.
+     * Последнее важно на экране блокировки: вызов ждёт разблокировки до 15 с, и если пользователь передумал и погасил
+     * экран, ассистент не должен открыться, когда телефон потом разблокируют.
+     */
+    private fun cancelled(id: Int) = press != id || menuPress == id || chordPress == id
 
     private fun showPowerMenu(id: Int) {
         menuPress = id
@@ -234,7 +238,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
             // Без этого отпускание кнопки сработает как короткое нажатие и погасит экран.
             // На разблокированном экране эту роль играет клавиша вызова ассистента (см. [launchAssistant]).
             sh("input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard")
-            if (!waitForUnlock() || cancelled(id)) return
+            if (!waitForUnlock(id) || cancelled(id)) return
             Thread.sleep(UNLOCK_SETTLE_MS)
         }
         // Сразу после первой разблокировки Google-приложение ещё поднимается, и панель Gemini
@@ -281,10 +285,11 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
 
     private fun isKeyguardShowing() = sh("dumpsys window | grep -m1 isKeyguardShowing").contains("=true")
 
-    private fun waitForUnlock(): Boolean {
+    private fun waitForUnlock(id: Int): Boolean {
         val deadline = System.currentTimeMillis() + UNLOCK_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(UNLOCK_POLL_MS)
+            if (cancelled(id)) return false
             if (!isKeyguardShowing()) return true
         }
         return false
