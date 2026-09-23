@@ -29,6 +29,9 @@ object PowerKeyController {
         private set
     @Volatile var daemonStatus: String? = null
         private set
+    /** Демон этой версии работает, но кнопку не перехватывает (например, не нашёл её); null — всё в порядке. */
+    @Volatile var daemonProblem: String? = null
+        private set
     /** Причина последнего неудачного запуска демона, null — запуск не падал или ещё не пробовали. */
     @Volatile var lastLaunchError: String? = null
         private set
@@ -195,6 +198,7 @@ object PowerKeyController {
     private fun refresh() {
         daemonVersion = DaemonClient.ping(token)
         daemonStatus = if (daemonVersion != null) DaemonClient.status(token) else null
+        daemonProblem = if (daemonVersion == BuildConfig.VERSION_CODE) DaemonClient.problem(token)?.ifEmpty { null } else null
         notifyListeners()
     }
 

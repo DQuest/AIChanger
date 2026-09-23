@@ -93,6 +93,7 @@ object PowerKeyDaemon {
         val reply = when (parts.getOrNull(1)) {
             DaemonProtocol.PING -> BuildConfig.VERSION_CODE.toString()
             DaemonProtocol.STATUS -> engine.status()
+            DaemonProtocol.PROBLEM -> engine.problem().orEmpty()
             DaemonProtocol.MODE -> {
                 engine.voiceMode = parts.getOrNull(2) != DaemonProtocol.MODE_WINDOW
                 DaemonProtocol.OK

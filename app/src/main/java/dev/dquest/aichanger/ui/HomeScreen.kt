@@ -79,7 +79,9 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
     val status = LocalStatusColors.current
     val scheme = MaterialTheme.colorScheme
     val error = state.error
+    val problem = state.problem.takeIf { state.running }
     val (container, content) = when {
+        problem != null -> scheme.errorContainer to scheme.onErrorContainer
         state.running -> status.successContainer to status.onSuccessContainer
         state.enabled && !state.launching && !state.waitingForWifi && error != null -> scheme.errorContainer to scheme.onErrorContainer
         else -> scheme.surfaceContainerHighest to scheme.onSurface
@@ -95,6 +97,7 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                     contentAlignment = Alignment.Center,
                 ) {
                     when {
+                        problem != null -> StatusIcon(R.drawable.ic_status_error)
                         state.running -> StatusIcon(R.drawable.ic_status_ok)
                         state.waitingForWifi -> StatusIcon(R.drawable.ic_status_wifi)
                         state.launching -> CircularProgressIndicator(Modifier.size(22.dp), color = content, strokeWidth = 2.dp)
@@ -105,6 +108,7 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     val (title, subtitle) = when {
+                        problem != null -> "Не работает" to problem.replaceFirstChar { it.uppercase() }
                         state.running -> "Работает" to "Удерживайте кнопку питания — откроется ${assistantLabel ?: "ассистент"}"
                         state.waitingForWifi -> (if (state.wifiEnabled) "Ждёт Wi-Fi" else "Wi-Fi выключен") to
                             "Перехват запустится сам, как только телефон подключится к Wi-Fi, в котором настраивали AIChanger"

@@ -14,6 +14,7 @@ object DaemonProtocol {
 
     const val PING = "ping" // ответ: versionCode демона
     const val STATUS = "status"
+    const val PROBLEM = "problem" // ответ: почему кнопка питания не перехватывается; пусто — всё в порядке
     const val MODE = "mode" // аргумент: MODE_VOICE или MODE_WINDOW
     const val STOP = "stop" // вернуть прежнего системного ассистента, завершиться
     /**

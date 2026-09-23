@@ -21,6 +21,8 @@ data class UiState(
     val waitingForWifi: Boolean,
     val wifiEnabled: Boolean,
     val error: String?,
+    /** Демон работает, но кнопку не перехватывает. */
+    val problem: String?,
     val assistant: String,
     val voice: Boolean,
     val details: String?,
@@ -41,6 +43,7 @@ data class UiState(
                 waitingForWifi = PowerKeyController.waitingForWifi,
                 wifiEnabled = Wifi.isEnabled(context),
                 error = PowerKeyController.lastLaunchError,
+                problem = PowerKeyController.daemonProblem,
                 assistant = PowerKeyController.assistant,
                 voice = PowerKeyController.isVoiceMode,
                 details = PowerKeyController.daemonStatus,

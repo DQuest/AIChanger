@@ -15,6 +15,9 @@ object DaemonClient {
 
     fun status(token: String): String? = request(token, DaemonProtocol.STATUS)
 
+    /** Почему кнопка не перехватывается; пустая строка — всё в порядке, null — демона нет. */
+    fun problem(token: String): String? = request(token, DaemonProtocol.PROBLEM)?.trim()
+
     fun setVoiceMode(token: String, voice: Boolean) =
         request(token, "${DaemonProtocol.MODE} ${if (voice) DaemonProtocol.MODE_VOICE else DaemonProtocol.MODE_WINDOW}")
 
