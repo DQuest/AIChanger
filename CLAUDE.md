@@ -20,7 +20,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Два процесса из одного APK:
 
 - **Приложение** (`dev.dquest.aichanger`): UI, сопряжение, запуск демона.
-  - `MainActivity`: экран, сделан кодом, без XML.
+  - `MainActivity`: реализует `ui.UiActions` (сопряжение, автозапуск, выбор ассистента) и показывает экраны из `ui/`
+    на Jetpack Compose + Material 3: `SetupWizard` (первая настройка, пока нет сопряжения или не пройден шаг
+    автозапуска, `setup_done`) и `HomeScreen` (карточки). `UiState` — снимок `PowerKeyController`, перечитывается по счётчику.
   - `PairingService`: сопряжение с беспроводной отладкой, код вводится в уведомлении (RemoteInput).
   - `AdbManager`: ключ и сертификат adb-клиента на libadb-android, хранятся в Device Protected storage.
   - `DaemonLauncher`: включает беспроводную отладку (и при необходимости параметры разработчика), подключается к своему adbd,
@@ -87,6 +89,12 @@ adb shell dumpsys activity activities | grep -m1 topResumedActivity   # откр
 - При включённой беспроводной отладке adb на Mac видит второе устройство; выбирать USB через `ANDROID_SERIAL`.
 - Откат BlueLM вручную: `adb shell content insert --uri content://settings/system --bind name:s:vivo_jovi_power_wakeup_switch --bind value:s:1`.
 - `prototype/power_to_gemini.py` — первый прототип логики, работает с Mac по adb; `backup.txt` — исходные значения настроек.
+
+## Иконка
+
+`res/drawable-nodpi/ic_launcher_art.png` — весь слой адаптивной иконки (432 px = 108 dp): рисунок занимает видимое окно
+72 dp, поля вокруг — продолжение его краёв под маску лаунчера. `ic_app_art.png` — видимая часть для заголовка в приложении.
+Исходник — картинка от пользователя; при замене нужно так же срезать фон, тень и ободок.
 
 ## Стиль
 
