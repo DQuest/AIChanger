@@ -38,18 +38,18 @@ jobs:
 
       # Debug-сборки подписываются ключом ~/.android/debug.keystore, а на раннере он каждый раз новый.
       # APK с другой подписью Android не поставит поверх уже установленного (придётся удалять приложение
-      # вместе с сопряжением). Если в секретах репозитория есть DEBUG_KEYSTORE_BASE64 — тот же ключ,
+      # вместе с сопряжением). Если в секретах репозитория есть CHANGERKEY (keystore в base64) — тот же ключ,
       # что на компьютере разработчика, — CI-сборки ставятся поверх локальных и наоборот.
       - name: Debug-ключ из секретов
         env:
-          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.CHANGERKEY }}
         run: |
           if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
             mkdir -p ~/.android
             echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
             echo "Используется debug-ключ из секретов"
           else
-            echo "Секрета DEBUG_KEYSTORE_BASE64 нет: APK подписан случайным ключом раннера"
+            echo "Секрета CHANGERKEY нет: APK подписан случайным ключом раннера"
           fi
 
       - name: Сборка

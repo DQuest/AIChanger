@@ -55,7 +55,7 @@ vivo просит подтвердить установку по adb на экр
 
 Android ставит обновление только с той же подписью. Чтобы APK из GitHub ставился поверх собранного на компьютере
 (и наоборот), добавьте свой debug-ключ в секреты репозитория: **Settings** → **Secrets and variables** → **Actions** →
-**New repository secret**, имя `DEBUG_KEYSTORE_BASE64`, значение:
+**New repository secret**, имя `CHANGERKEY`, значение:
 
 ```bash
 base64 -i ~/.android/debug.keystore | pbcopy   # macOS: значение окажется в буфере обмена
