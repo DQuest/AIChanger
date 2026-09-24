@@ -24,7 +24,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **Приложение** (`dev.dquest.aichanger`): UI, сопряжение, запуск демона.
   - `MainActivity`: реализует `ui.UiActions` (сопряжение, автозапуск, выбор ассистента) и показывает экраны из `ui/`
     на Jetpack Compose + Material 3: `SetupWizard` (первая настройка, пока нет сопряжения или не пройден шаг
-    автозапуска, `setup_done`; первый шаг — пользователь сам выключает BlueLM на кнопке) и `HomeScreen` (карточки). `UiState` — снимок `PowerKeyController`, перечитывается по счётчику.
+    автозапуска, `setup_done`; первый шаг — пользователь сам выключает BlueLM на кнопке; отметки пользователя
+    хранятся в `setup_steps`, чтобы мастер продолжался и после возврата по уведомлению) и `HomeScreen` (карточки). `UiState` — снимок `PowerKeyController`, перечитывается по счётчику.
   - `PairingService`: сопряжение с беспроводной отладкой, код вводится в уведомлении (RemoteInput); канал уведомлений
     громкий, чтобы поле кода всплыло поверх настроек. Статус автозапуска — в отдельном тихом канале.
   - `AdbManager`: ключ и сертификат adb-клиента на libadb-android, хранятся в Device Protected storage.

@@ -154,11 +154,10 @@ class MainActivity : ComponentActivity(), UiActions {
         enable()
     }
 
+    override fun completeSetupStep(step: SetupStep) = PowerKeyController.completeSetupStep(step)
+
     /** Заново с сопряжения: оно же нужно, если сменился ключ или сеть. Работающий перехват не останавливаем. */
-    override fun restartSetup() {
-        PowerKeyController.setSetupDone(false)
-        PowerKeyController.setPaired(false)
-    }
+    override fun restartSetup() = PowerKeyController.restartSetup()
 
     override fun enable() {
         PowerKeyController.setEnabled(true)

@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import dev.dquest.aichanger.Assistant
 import dev.dquest.aichanger.BuildConfig
 import dev.dquest.aichanger.PowerKeyController
+import dev.dquest.aichanger.SetupStep
 import dev.dquest.aichanger.Wifi
 
 /** Снимок состояния для экрана: [PowerKeyController] не наблюдаемый, поэтому экран перечитывает его по сигналу. */
@@ -16,6 +17,7 @@ data class UiState(
     val enabled: Boolean,
     val paired: Boolean,
     val setupDone: Boolean,
+    val setupSteps: Set<SetupStep>,
     val developerOptions: Boolean,
     val running: Boolean,
     val launching: Boolean,
@@ -38,6 +40,7 @@ data class UiState(
                 enabled = PowerKeyController.isEnabled,
                 paired = PowerKeyController.isPaired,
                 setupDone = PowerKeyController.isSetupDone,
+                setupSteps = PowerKeyController.completedSetupSteps,
                 developerOptions = Settings.Global.getInt(
                     context.contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0
                 ) == 1,
@@ -68,6 +71,7 @@ interface UiActions {
     fun openAutoStart()
     fun openBackgroundPower()
     fun openWifi()
+    fun completeSetupStep(step: SetupStep)
     fun finishSetup()
     fun restartSetup()
     fun enable()

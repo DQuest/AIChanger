@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.dquest.aichanger.SetupStep
 
 /**
  * Первая настройка по шагам. Шаги 2 и 3 отмечаются сами (параметры разработчика включены, сопряжение
@@ -41,16 +42,16 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun SetupWizard(state: UiState, actions: UiActions) {
-    var blueLmDone by rememberSaveable { mutableStateOf(false) }
-    var skipDeveloperStep by rememberSaveable { mutableStateOf(false) }
+    // Отметки пользователя хранятся в настройках (PowerKeyController), а не на экране: из настроек телефона
+    // возвращаются и по уведомлению, и мастер должен продолжиться с того же шага. Индикатор ожидания кода — только экранный.
+    val done = state.setupSteps
     var pairingStarted by rememberSaveable { mutableStateOf(false) }
-    var autoStartDone by rememberSaveable { mutableStateOf(false) }
     // BlueLM первым: сразу после сопряжения перехват уже запускается.
     val step = when {
-        !blueLmDone -> 1
-        state.paired && autoStartDone -> 5
+        SetupStep.BLUELM_OFF !in done -> 1
+        state.paired && SetupStep.AUTOSTART in done -> 5
         state.paired -> 4
-        state.developerOptions || skipDeveloperStep -> 3
+        state.developerOptions || SetupStep.DEVELOPER_OPTIONS in done -> 3
         else -> 2
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
@@ -80,7 +81,7 @@ fun SetupWizard(state: UiState, actions: UiActions) {
                     body = "AIChanger не меняет настройки BlueLM. Если BlueLM тоже вызывается удержанием кнопки питания, " +
                         "откроются оба ассистента. Найдите в настройках телефона BlueLM (蓝心小V) и выключите его вызов " +
                         "кнопкой питания. Если потом выключите AIChanger, BlueLM можно будет включить там же.",
-                    primary = "Готово, выключил" to { blueLmDone = true },
+                    primary = "Готово, выключил" to { actions.completeSetupStep(SetupStep.BLUELM_OFF) },
                 )
                 2 -> Step(
                     title = "Включите параметры разработчика",
@@ -88,7 +89,7 @@ fun SetupWizard(state: UiState, actions: UiActions) {
                         "Откройте «О телефоне» и нажмите 7 раз на номер версии ПО, пока не появится сообщение, " +
                         "что вы стали разработчиком. Потом вернитесь сюда.",
                     primary = "Открыть «О телефоне»" to actions::openDeviceInfo,
-                    secondary = "Уже включены" to { skipDeveloperStep = true },
+                    secondary = "Уже включены" to { actions.completeSetupStep(SetupStep.DEVELOPER_OPTIONS) },
                 )
                 3 -> Step(
                     title = "Подключите беспроводную отладку",
@@ -119,7 +120,7 @@ fun SetupWizard(state: UiState, actions: UiActions) {
                     body = "Тогда кнопка будет работать и после перезагрузки телефона. " +
                         "Найдите AIChanger в списке и включите переключатель.",
                     primary = "Открыть автозапуск" to actions::openAutoStart,
-                    secondary = "Готово" to { autoStartDone = true },
+                    secondary = "Готово" to { actions.completeSetupStep(SetupStep.AUTOSTART) },
                 )
                 else -> Step(
                     title = "Разрешите работу в фоне",

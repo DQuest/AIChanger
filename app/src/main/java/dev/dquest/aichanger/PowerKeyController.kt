@@ -8,6 +8,13 @@ import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
+/**
+ * Шаги мастера, которые приложение проверить не может и подтверждает пользователь. Хранятся в настройках, а не
+ * в состоянии экрана: из настроек телефона возвращаются и по уведомлению, и vivo может выгрузить приложение,
+ * а мастер должен продолжиться с того же шага.
+ */
+enum class SetupStep { BLUELM_OFF, DEVELOPER_OPTIONS, AUTOSTART }
+
 /** Сторона приложения: настройки и связь с демоном ([DaemonClient], [DaemonLauncher]). */
 object PowerKeyController {
 
@@ -20,6 +27,7 @@ object PowerKeyController {
     private const val KEY_ASSISTANT = "assistant"
     private const val KEY_RESTORE_ROLE = "restore_role"
     private const val KEY_SETUP_DONE = "setup_done"
+    private const val KEY_SETUP_STEPS = "setup_steps"
 
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
     // Отдельный лок, а не @Synchronized: тот держит ensureRunning на всё время запуска, а выбор ассистента ждать его не должен.
@@ -71,6 +79,23 @@ object PowerKeyController {
 
     fun setSetupDone(value: Boolean) {
         prefs.edit().putBoolean(KEY_SETUP_DONE, value).apply()
+        notifyListeners()
+    }
+
+    val completedSetupSteps: Set<SetupStep>
+        get() = prefs.getStringSet(KEY_SETUP_STEPS, null).orEmpty()
+            .mapNotNullTo(mutableSetOf()) { name -> SetupStep.entries.firstOrNull { it.name == name } }
+
+    fun completeSetupStep(step: SetupStep) {
+        // Множество из getStringSet менять нельзя, поэтому сохраняем новое.
+        val names = completedSetupSteps.mapTo(mutableSetOf()) { it.name } + step.name
+        prefs.edit().putStringSet(KEY_SETUP_STEPS, names).apply()
+        notifyListeners()
+    }
+
+    /** Мастер с первого шага: сбрасываются сопряжение и отметки пользователя. Работающий перехват не трогаем. */
+    fun restartSetup() {
+        prefs.edit().putBoolean(KEY_SETUP_DONE, false).putBoolean(KEY_PAIRED, false).remove(KEY_SETUP_STEPS).apply()
         notifyListeners()
     }
 

@@ -136,14 +136,25 @@ class PairingService : Service() {
         private const val CHANNEL_ID = "aichanger"
         private const val PORT_WAIT_MS = 5000L
         private const val PAIRING_CODE_LENGTH = 6
+        private const val OPEN_APP_REQUEST = 1
         private const val NOTIFICATION_ID = 1
         private const val ACTION_CODE = "dev.dquest.aichanger.PAIRING_CODE"
         private const val KEY_CODE = "code"
         private const val LOCALHOST = "127.0.0.1"
 
-        /** Без явного contentIntent прошивка vivo до первой разблокировки пытается подставить свой и пишет ошибку. */
-        fun openAppIntent(context: Context): PendingIntent =
-            PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        /**
+         * Без явного contentIntent прошивка vivo до первой разблокировки пытается подставить свой и пишет ошибку.
+         * CLEAR_TOP и SINGLE_TOP возвращают к уже открытому экрану приложения и закрывают настройки поверх него.
+         * Без них поверх настроек создавался второй экран со своим, пустым состоянием, и «Назад» вёл обратно в настройки.
+         * Код запроса 1, а не 0: по прежнему коду система вернула бы ещё живой PendingIntent без этих флагов.
+         */
+        fun openAppIntent(context: Context): PendingIntent = PendingIntent.getActivity(
+            context,
+            OPEN_APP_REQUEST,
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
 
         /** Громкий канал: уведомление с полем для кода должно всплыть поверх настроек отладки. */
         private fun ensureChannel(context: Context) =
