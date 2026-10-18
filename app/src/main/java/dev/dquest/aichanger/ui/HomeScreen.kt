@@ -46,6 +46,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.dquest.aichanger.Assistants
+import dev.dquest.aichanger.AutoStartService
 import dev.dquest.aichanger.BuildConfig
 import dev.dquest.aichanger.R
 import dev.dquest.aichanger.daemon.DaemonProtocol
@@ -81,8 +82,9 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
     val scheme = MaterialTheme.colorScheme
     val error = state.error
     val problem = state.problem.takeIf { state.running }
+    val stopError = state.stopError
     val (container, content) = when {
-        problem != null -> scheme.errorContainer to scheme.onErrorContainer
+        problem != null || stopError != null -> scheme.errorContainer to scheme.onErrorContainer
         state.running -> status.successContainer to status.onSuccessContainer
         state.enabled && !state.launching && !state.waitingForWifi && error != null -> scheme.errorContainer to scheme.onErrorContainer
         else -> scheme.surfaceContainerHighest to scheme.onSurface
@@ -98,7 +100,7 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                     contentAlignment = Alignment.Center,
                 ) {
                     when {
-                        problem != null -> StatusIcon(R.drawable.ic_status_error)
+                        problem != null || stopError != null -> StatusIcon(R.drawable.ic_status_error)
                         state.running -> StatusIcon(R.drawable.ic_status_ok)
                         state.waitingForWifi -> StatusIcon(R.drawable.ic_status_wifi)
                         state.launching -> CircularProgressIndicator(Modifier.size(22.dp), color = content, strokeWidth = 2.dp)
@@ -111,9 +113,15 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                     val (title, subtitle) = when {
                         problem != null -> "Не работает" to problem.replaceFirstChar { it.uppercase() }
                         state.running -> "Работает" to "Удерживайте кнопку питания — откроется ${assistantLabel ?: "ассистент"}"
-                        state.waitingForWifi -> (if (state.wifiEnabled) "Ждёт Wi-Fi" else "Wi-Fi выключен") to
+                        state.waitingForWifi -> when {
+                            state.untrustedWifi -> "Другая сеть Wi-Fi"
+                            state.wifiEnabled -> "Ждёт Wi-Fi"
+                            else -> "Wi-Fi выключен"
+                        } to (if (state.untrustedWifi) AutoStartService.UNTRUSTED_REASON + " " else "") +
                             "Перехват запустится сам, как только телефон подключится к Wi-Fi, в котором настраивали AIChanger"
                         state.launching -> "Запускается…" to "Это займёт несколько секунд"
+                        stopError != null -> "Прежний ассистент не вернулся" to friendlyError(stopError) +
+                            " Ассистентом телефона пока остаётся выбранный в AIChanger; повторим при следующем открытии."
                         !state.enabled -> "Выключено" to
                             "Кнопка питания не перехватывается. BlueLM, если нужен, включите в настройках телефона"
                         error != null -> "Не запустилось" to friendlyError(error)
@@ -124,6 +132,10 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                 }
             }
             when {
+                stopError != null -> {
+                    ActionButton("Повторить", actions::disable)
+                    TextButton(onClick = actions::enable, modifier = Modifier.fillMaxWidth()) { Text("Включить снова") }
+                }
                 !state.enabled -> ActionButton("Включить", actions::enable)
                 state.waitingForWifi -> ActionButton("Открыть Wi-Fi", actions::openWifi)
                 !state.running && !state.launching && error != null -> ActionButton("Повторить", actions::enable)
@@ -145,6 +157,8 @@ private fun ActionButton(text: String, onClick: () -> Unit) {
 
 /** Ошибки запуска приходят техническим текстом; пользователю важно, что сделать. */
 private fun friendlyError(error: String): String = when {
+    error.contains("в этой сети") ->
+        "В этой сети Wi-Fi беспроводная отладка не разрешена. Подключитесь к сети, в которой настраивали AIChanger."
     error.contains("Wi-Fi") -> "Нет Wi-Fi. Подключитесь к сети, в которой настраивали AIChanger."
     error.contains("беспроводной отладке") ->
         "Не удалось подключиться к беспроводной отладке. Проверьте, что телефон в той же сети Wi-Fi, что и при настройке."

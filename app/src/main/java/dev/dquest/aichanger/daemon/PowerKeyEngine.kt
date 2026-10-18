@@ -23,8 +23,10 @@ import kotlin.concurrent.thread
  */
 class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Volatile var voiceMode: Boolean) {
 
-    // Два потока: вызов Gemini может ждать разблокировки до 15 с, а меню ждать его не должно.
-    private val scheduler = Executors.newScheduledThreadPool(2)
+    // Вызов ассистента может ждать разблокировки до 15 с, а меню ждать его не должно, даже если вызовы
+    // от прошлых нажатий ещё не закончились: у них разные потоки.
+    private val assistantScheduler = Executors.newSingleThreadScheduledExecutor()
+    private val menuScheduler = Executors.newSingleThreadScheduledExecutor()
     private var pendingFire: ScheduledFuture<*>? = null
     private var pendingMenu: ScheduledFuture<*>? = null
     // Номер текущего нажатия и нажатий, для которых ассистент уже не нужен: открыто меню или это сочетание клавиш.
@@ -39,6 +41,8 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
     @Volatile private var devices: List<String> = emptyList()
     // Почему кнопка питания не перехватывается; null — всё в порядке.
     @Volatile private var lastError: String? = null
+    // Последняя ошибка прямого запуска ассистента (`am start`); только для сведений, кнопку она не ломает.
+    @Volatile private var launchError: String? = null
     @Volatile private var fired = 0
 
     /** Кого вызывать, в формате [DaemonProtocol.ASSISTANT]. */
@@ -73,6 +77,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         if (isGemini(assistant)) append("Режим: ${if (voiceMode) "голосовой ввод" else "окно без прослушивания"}\n")
         append("Вызовов ассистента: $fired")
         lastError?.let { append("\nОшибка: $it") }
+        launchError?.let { append("\nОшибка запуска ассистента: $it") }
     }
 
     /**
@@ -199,8 +204,8 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
             chordPress = id
             return
         }
-        pendingFire = scheduler.schedule({ invokeAssistant(id) }, holdMs.toLong(), TimeUnit.MILLISECONDS)
-        pendingMenu = scheduler.schedule({ showPowerMenu(id) }, powerMenuMs.toLong(), TimeUnit.MILLISECONDS)
+        pendingFire = assistantScheduler.schedule({ invokeAssistant(id) }, holdMs.toLong(), TimeUnit.MILLISECONDS)
+        pendingMenu = menuScheduler.schedule({ showPowerMenu(id) }, powerMenuMs.toLong(), TimeUnit.MILLISECONDS)
     }
 
     /** Вызывается под локом this. */
@@ -243,13 +248,20 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
             if (!waitForUnlock(id) || cancelled(id)) return
             Thread.sleep(UNLOCK_SETTLE_MS)
         }
+        // Повтор нужен только Gemini (см. ниже). Остальные открываются с первого раза, а повторная клавиша ASSIST
+        // или прямой запуск при медленном холодном старте закрыли бы уже открытую панель или открыли её заново.
+        if (!isGemini(target)) {
+            launchAssistant(target)
+            fired++
+            return
+        }
         // Сразу после первой разблокировки Google-приложение ещё поднимается, и панель Gemini
         // может закрыться сама (мелькнёт только рамка). Тогда вызываем ещё раз.
         repeat(ASSIST_ATTEMPTS) {
             if (cancelled(id)) return
-            val before = if (isGemini(target)) topActivity() else ""
+            val before = topActivity()
             launchAssistant(target)
-            if (waitForAssistant(target, before)) {
+            if (waitForGemini(before, id)) {
                 fired++
                 return
             }
@@ -262,7 +274,10 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
             // KEYCODE_WAKEUP (на включённом экране ничего не делает), иначе отпускание погасит экран.
             DaemonProtocol.isDirect(target) -> {
                 sh("input keyevent KEYCODE_WAKEUP")
-                exec(listOf("am", "start", "-a", "android.intent.action.ASSIST", "-n", target))
+                val output = exec(listOf("am", "start", "-a", "android.intent.action.ASSIST", "-n", target))
+                // Например, обновление ассистента переименовало activity: видно в сведениях, а приложение
+                // подберёт новую при следующем открытии.
+                output.lineSequence().firstOrNull { it.startsWith("Error") }?.let { launchError = "$target: $it" }
             }
             // Голосовая клавиша всегда открывает Google, поэтому для других системных ассистентов только ASSIST.
             isGemini(target) && voiceMode -> sh("input keyevent KEYCODE_VOICE_ASSIST")
@@ -270,14 +285,12 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         }
     }
 
-    /** [before] — верхняя activity до вызова, нужна только для Gemini. */
-    private fun waitForAssistant(target: String, before: String): Boolean {
-        // Приложения других ассистентов при холодном старте открываются дольше панели Gemini.
-        val waitMs = if (isGemini(target)) GEMINI_WAIT_MS else APP_WAIT_MS
-        val deadline = System.currentTimeMillis() + waitMs
-        while (System.currentTimeMillis() < deadline) {
+    /** [before] — верхняя activity до вызова. */
+    private fun waitForGemini(before: String, id: Int): Boolean {
+        val deadline = System.currentTimeMillis() + GEMINI_WAIT_MS
+        while (System.currentTimeMillis() < deadline && !cancelled(id)) {
             Thread.sleep(UNLOCK_POLL_MS)
-            if (isOpened(target, topActivity(), before)) return true
+            if (isGeminiOpened(topActivity(), before)) return true
         }
         return false
     }
@@ -286,9 +299,8 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
      * Панель Gemini узнаём по её activity, а если Google её переименует — по любой activity Google, появившейся
      * после вызова. Иначе каждое удержание слало бы ASSIST трижды, открывая и закрывая панель.
      */
-    private fun isOpened(target: String, top: String, before: String) =
-        if (isGemini(target)) GEMINI_ACTIVITY in top || (GOOGLE_ACTIVITY in top && top != before)
-        else DaemonProtocol.assistantPackage(target) + "/" in top
+    private fun isGeminiOpened(top: String, before: String) =
+        GEMINI_ACTIVITY in top || (GOOGLE_ACTIVITY in top && top != before)
 
     private fun isGemini(target: String) = target == DaemonProtocol.GOOGLE_APP
 
@@ -370,7 +382,6 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         const val UNLOCK_SETTLE_MS = 300L
         const val ASSIST_ATTEMPTS = 3
         const val GEMINI_WAIT_MS = 1500L
-        const val APP_WAIT_MS = 3000L
         const val GEMINI_ACTIVITY = "googlequicksearchbox/com.google.android.apps.search.assistant.surfaces.voice.robin.ui.floaty.activity.FloatyActivity"
         const val GOOGLE_ACTIVITY = DaemonProtocol.GOOGLE_APP + "/"
     }

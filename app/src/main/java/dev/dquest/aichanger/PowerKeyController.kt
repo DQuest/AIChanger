@@ -6,6 +6,7 @@ import dev.dquest.aichanger.daemon.DaemonProtocol
 import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
@@ -49,12 +50,23 @@ object PowerKeyController {
         private set
     @Volatile var launching = false
         private set
+    /**
+     * Почему при выключении не удалось вернуть прежнего системного ассистента (демона уже не было, а adb без Wi-Fi
+     * не подключился); null — вернули или возвращать нечего. Повторяем при открытии приложения ([startIfNeeded]).
+     */
+    @Volatile var lastStopError: String? = null
+        private set
+    private val stopping = AtomicBoolean(false)
     /** Запуск отложен до подключения к Wi-Fi: его ждёт [AutoStartService] с уведомлением. */
     @Volatile var waitingForWifi = false
         private set
+    /** Wi-Fi подключён, но в этой сети беспроводная отладка не разрешена: [AutoStartService] ждёт другую сеть. */
+    @Volatile var untrustedWifi = false
+        private set
 
-    fun setWaitingForWifi(value: Boolean) {
+    fun setWaitingForWifi(value: Boolean, untrusted: Boolean = false) {
         waitingForWifi = value
+        untrustedWifi = value && untrusted
         notifyListeners()
     }
 
@@ -73,6 +85,14 @@ object PowerKeyController {
     val isVoiceMode: Boolean get() = prefs.getBoolean(KEY_VOICE, true)
 
     val isPaired: Boolean get() = prefs.getBoolean(KEY_PAIRED, false)
+
+    /**
+     * Пользователь начал настройку заново: мастер показывает сопряжение, пока оно не пройдёт. Сохранённое сопряжение
+     * при этом не сбрасываем: ключ продолжает действовать, и если мастер бросить, автозапуск после перезагрузки
+     * ([BootReceiver] смотрит на [isPaired]) должен работать.
+     */
+    @Volatile var isRepairing = false
+        private set
 
     /** Пройден ли мастер первой настройки (последние шаги — настройки vivo — проверить нельзя). */
     val isSetupDone: Boolean get() = prefs.getBoolean(KEY_SETUP_DONE, false)
@@ -93,9 +113,10 @@ object PowerKeyController {
         notifyListeners()
     }
 
-    /** Мастер с первого шага: сбрасываются сопряжение и отметки пользователя. Работающий перехват не трогаем. */
+    /** Мастер с первого шага: сбрасываются отметки пользователя, сопряжение — только в мастере ([isRepairing]). Работающий перехват не трогаем. */
     fun restartSetup() {
-        prefs.edit().putBoolean(KEY_SETUP_DONE, false).putBoolean(KEY_PAIRED, false).remove(KEY_SETUP_STEPS).apply()
+        isRepairing = true
+        prefs.edit().putBoolean(KEY_SETUP_DONE, false).remove(KEY_SETUP_STEPS).apply()
         notifyListeners()
     }
 
@@ -124,11 +145,14 @@ object PowerKeyController {
 
     fun setPaired(value: Boolean) {
         prefs.edit().putBoolean(KEY_PAIRED, value).apply()
+        if (value) isRepairing = false
         notifyListeners()
     }
 
     fun setEnabled(value: Boolean) {
         prefs.edit().putBoolean(KEY_ENABLED, value).apply()
+        // Включённый демон сам вернёт ассистента при следующем выключении: прежняя неудача больше не важна.
+        if (value) lastStopError = null
         notifyListeners()
     }
 
@@ -147,6 +171,22 @@ object PowerKeyController {
             applyAssistant()
             refresh()
         }
+    }
+
+    /**
+     * Сверяет выбор со списком установленных ассистентов ([Assistants.find]). Для прямого запуска хранится и activity,
+     * которую обновление ассистента может переименовать, а сам ассистент могут удалить: тогда кнопка молча перестала бы
+     * работать. Берём тот же пакет с новой activity, иначе Gemini или ассистента с прямым запуском, который не меняет
+     * системного. Вызывать после разблокировки: до неё список неполный (службы большинства ассистентов не directBootAware).
+     */
+    fun reconcileAssistant(available: List<Assistant>) {
+        val current = assistant
+        if (available.any { it.target == current }) return
+        val replacement = available.firstOrNull { DaemonProtocol.assistantPackage(it.target) == DaemonProtocol.assistantPackage(current) }
+            ?: available.firstOrNull { it == Assistants.GEMINI }
+            ?: available.firstOrNull { DaemonProtocol.isDirect(it.target) }
+            ?: return
+        setAssistant(replacement.target)
     }
 
     /**
@@ -199,9 +239,19 @@ object PowerKeyController {
         val appContext = context.applicationContext
         // Если запуск ждал Wi-Fi, ждать больше нечего: убираем службу вместе с её уведомлением.
         AutoStartService.stop(appContext)
-        // Свой поток, а не background: ожидание идущего запуска может занять минуты, а экран должен обновляться.
+        stopInBackground(appContext)
+    }
+
+    /** Свой поток, а не background: ожидание идущего запуска может занять минуты, а экран должен обновляться. */
+    private fun stopInBackground(context: Context) {
+        // Остановка уже идёт (нажали ещё раз или открыли приложение): вторая ничего не добавит.
+        if (!stopping.compareAndSet(false, true)) return
         thread(name = "daemon-stop") {
-            stopDaemon(appContext)
+            try {
+                stopDaemon(context)
+            } finally {
+                stopping.set(false)
+            }
             refresh()
         }
     }
@@ -215,20 +265,38 @@ object PowerKeyController {
         // Пока ждали, перехват снова включили: останавливать нечего.
         if (isEnabled) return
         // Пустой ответ бывает, когда демон закрыл соединение, ничего не сделав (например, все его потоки заняты).
-        val restored = DaemonClient.stop(token) == DaemonProtocol.OK ||
-            runCatching { DaemonLauncher.restoreSystem(context, restoreRole) }.isSuccess
-        if (restored) prefs.edit().remove(KEY_RESTORE_ROLE).apply()
+        val result = if (DaemonClient.stop(token) == DaemonProtocol.OK) Result.success(Unit)
+        else runCatching { DaemonLauncher.restoreSystem(context, restoreRole) }
+        if (result.isSuccess) {
+            prefs.edit().remove(KEY_RESTORE_ROLE).apply()
+            lastStopError = null
+        } else if (restoreRole != null) {
+            // Системным остался ассистент, выбранный в AIChanger: говорим об этом, а не молчим.
+            lastStopError = result.exceptionOrNull()?.message ?: "неизвестная ошибка"
+        }
     }
 
-    fun refreshAsync() = background.execute { refresh() }
+    private val refreshQueued = AtomicBoolean(false)
+
+    /** Опрос экрана раз в 2 с не должен копить очередь, пока поток занят долгим запросом к демону. */
+    fun refreshAsync() {
+        if (!refreshQueued.compareAndSet(false, true)) return
+        background.execute {
+            refreshQueued.set(false)
+            refresh()
+        }
+    }
 
     /**
      * Вызывается при открытии приложения: если перехват включён, а демон не отвечает или прежней версии,
      * запускает его. Так чинятся неудачный автозапуск (не было Wi-Fi, vivo не разбудила приложение),
      * убитый демон и обновление, после которого vivo отбросила MY_PACKAGE_REPLACED.
+     * Если перехват выключен, но прежнего системного ассистента вернуть не удалось, повторяет возврат.
      */
     fun startIfNeeded(context: Context) = background.execute {
         refresh()
+        // Перехват выключен, а прежнего системного ассистента вернуть не удалось: пробуем снова.
+        if (!isEnabled && isPaired && restoreRole != null) stopInBackground(context.applicationContext)
         if (isEnabled && isPaired && daemonVersion != BuildConfig.VERSION_CODE) {
             try {
                 AutoStartService.start(context)

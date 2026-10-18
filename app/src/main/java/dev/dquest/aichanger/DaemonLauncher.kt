@@ -32,6 +32,8 @@ object DaemonLauncher {
     private const val MARKS = "launcher_marks"
     private const val WIFI_WAIT_MS = 30_000L
     private const val CONNECT_ATTEMPTS = 5
+    // Столько раз система выключила отладку сразу после включения: значит, сеть не доверенная.
+    private const val UNTRUSTED_AFTER = 2
     private const val CONNECT_TIMEOUT_MS = 15_000L
     private const val DAEMON_WAIT_MS = 10_000L
     private const val POLL_MS = 500L
@@ -53,6 +55,11 @@ object DaemonLauncher {
 
     fun canWriteSecureSettings(context: Context) =
         context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
+
+    fun isWirelessAdbOn(context: Context) = Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0) == 1
+
+    /** Система выключила беспроводную отладку, пока мы искали порт: ждать порт дальше бессмысленно. */
+    private class WirelessAdbOffException : IOException("система выключила беспроводную отладку")
 
     /**
      * Выполняется в фоновом потоке, бросает исключение с понятным текстом при ошибке.
@@ -136,6 +143,7 @@ object DaemonLauncher {
     private fun withAdb(context: Context, block: (AdbManager) -> Unit) {
         val adb = AdbManager.get(context)
         var lastError: Exception? = null
+        var turnedOff = 0
         repeat(CONNECT_ATTEMPTS) { attempt ->
             if (attempt > 0) restartWirelessAdb(context)
             try {
@@ -147,10 +155,16 @@ object DaemonLauncher {
                     }
                     return
                 }
+            } catch (e: WirelessAdbOffException) {
+                lastError = e
+                Log.w(TAG, "ADB connect attempt ${attempt + 1}: wireless debugging turned off by the system")
+                // Сразу после загрузки система выключает отладку, если Wi-Fi ещё не готов, и перезапуск это лечит.
+                // Выключила снова — значит, сеть не доверенная: в ней каждое включение лишь показывает диалог
+                // о разрешении отладки, а перебор всех попыток занял бы около двух минут.
+                if (++turnedOff >= UNTRUSTED_AFTER) throw UntrustedWifiException()
             } catch (e: Exception) {
                 lastError = e
-                val adbWifi = Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0)
-                Log.w(TAG, "ADB connect attempt ${attempt + 1} failed, adb_wifi_enabled=$adbWifi", e)
+                Log.w(TAG, "ADB connect attempt ${attempt + 1} failed, adb_wifi_enabled=${isWirelessAdbOn(context)}", e)
             }
             Thread.sleep(POLL_MS * 4)
         }
@@ -182,6 +196,7 @@ object DaemonLauncher {
                 }
                 rejected += port
             }
+            if (!isWirelessAdbOn(context)) throw WirelessAdbOffException()
             // Сразу после включения отладки adbd открывает порт не мгновенно.
             Thread.sleep(POLL_MS)
         } while (System.currentTimeMillis() < deadline)

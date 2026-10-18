@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.Network
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -48,7 +49,12 @@ class AutoStartService : Service() {
         val shown = current ?: notification(this, STARTING).also { current = it }
         startForeground(NOTIFICATION_ID, shown, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         // Поток уже идёт. Он мог решить, что запускать не нужно (перехват выключали), поэтому после него запустим ещё раз.
-        if (working) rerun = true else startWork(applicationContext)
+        if (working) {
+            rerun = true
+            retryNow = true
+        } else {
+            startWork(applicationContext)
+        }
         return START_NOT_STICKY
     }
 
@@ -59,6 +65,7 @@ class AutoStartService : Service() {
         private const val STARTING = "Запуск перехвата кнопки…"
         // Раз в столько перепроверяем, не включили ли Wi-Fi (подключение к сети приходит сразу, по колбэку).
         private const val WIFI_RECHECK_MS = 10_000L
+        const val UNTRUSTED_REASON = "В этой сети беспроводная отладка не разрешена."
 
         private val main = Handler(Looper.getMainLooper())
         // Меняются только в главном потоке.
@@ -66,6 +73,8 @@ class AutoStartService : Service() {
         private var working = false
         private var rerun = false
         @Volatile private var current: Notification? = null
+        // Запрос пришёл, пока ждём другую сеть Wi-Fi (например, открыли приложение): пробуем снова в этой.
+        @Volatile private var retryNow = false
 
         fun start(context: Context) =
             context.startForegroundService(Intent(context, AutoStartService::class.java))
@@ -115,10 +124,13 @@ class AutoStartService : Service() {
 
         private fun launchWhenWifi(context: Context) {
             while (true) {
+                val networks = Wifi.networks(context)
                 try {
                     // Если перехват выключили, пока ждали Wi-Fi, ensureRunning ничего не запустит.
                     PowerKeyController.ensureRunning(context)
                     return
+                } catch (_: UntrustedWifiException) {
+                    waitForOtherWifi(context, networks)
                 } catch (_: NoWifiException) {
                     waitForWifi(context)
                 }
@@ -133,10 +145,29 @@ class AutoStartService : Service() {
                     // Текст меняется, когда Wi-Fi включили, но сеть ещё не подключилась.
                     val enabled = Wifi.isEnabled(context)
                     if (enabled != shownEnabled) {
-                        show(context, wifiNotification(context, enabled))
+                        show(context, wifiNotification(context, if (enabled) "Wi-Fi не подключён" else "Wi-Fi выключен"))
                         shownEnabled = enabled
                     }
                     Wifi.awaitConnected(context, WIFI_RECHECK_MS)
+                }
+            } finally {
+                PowerKeyController.setWaitingForWifi(false)
+            }
+            if (PowerKeyController.isEnabled) show(context, notification(context, STARTING))
+        }
+
+        /**
+         * В сети, где отладка не разрешена, каждая попытка лишь показывает системный диалог о разрешении, поэтому ждём
+         * подключения к другой сети (или переподключения), нового запроса из приложения или того, что пользователь
+         * разрешил отладку в этом диалоге: тогда система включает её сама.
+         */
+        private fun waitForOtherWifi(context: Context, known: Set<Network>) {
+            PowerKeyController.setWaitingForWifi(true, untrusted = true)
+            retryNow = false
+            try {
+                show(context, wifiNotification(context, "Другая сеть Wi-Fi", UNTRUSTED_REASON))
+                while (PowerKeyController.isEnabled && !retryNow && !DaemonLauncher.isWirelessAdbOn(context)) {
+                    if (Wifi.awaitNewNetwork(context, known, WIFI_RECHECK_MS)) break
                 }
             } finally {
                 PowerKeyController.setWaitingForWifi(false)
@@ -149,16 +180,18 @@ class AutoStartService : Service() {
             context.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
         }
 
-        private fun wifiNotification(context: Context, wifiEnabled: Boolean): Notification {
+        private fun wifiNotification(context: Context, title: String, reason: String? = null): Notification {
             val openWifi = PendingIntent.getActivity(
                 context, 0, Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 PendingIntent.FLAG_IMMUTABLE,
             )
-            val text = "Перехват кнопки запустится сам, как только телефон подключится к Wi-Fi, " +
-                "в котором настраивали AIChanger."
+            val text = listOfNotNull(
+                reason,
+                "Перехват кнопки запустится сам, как только телефон подключится к Wi-Fi, в котором настраивали AIChanger.",
+            ).joinToString(" ")
             return Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(if (wifiEnabled) "Wi-Fi не подключён" else "Wi-Fi выключен")
+                .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(Notification.BigTextStyle().bigText(text))
                 .setContentIntent(PairingService.openAppIntent(context))

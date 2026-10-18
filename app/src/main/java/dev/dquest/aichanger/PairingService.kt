@@ -51,18 +51,12 @@ class PairingService : Service() {
         }.also { it.start() }
     }
 
-    /**
-     * Код или «порт код» через пробел. Без порта ждём, пока его найдёт mDNS. Порт — число перед кодом:
-     * так подходит и строка «IP-адрес и порт», вставленная целиком («192.168.1.5:37123 123456»).
-     */
+    /** Код или «порт код» через пробел ([parsePairingInput]). Без порта ждём, пока его найдёт mDNS. */
     private fun onInput(input: String) {
-        val numbers = Regex("\\d+").findAll(input).map { it.value }.toList()
-        val code = numbers.lastOrNull()
-        if (code == null || code.length != PAIRING_CODE_LENGTH) {
+        val (typedPort, code) = parsePairingInput(input) ?: run {
             notify("Введите шестизначный код из окна сопряжения (или порт и код через пробел)", withCodeInput = true)
             return
         }
-        val typedPort = numbers.getOrNull(numbers.size - 2)?.toIntOrNull()?.takeIf { it in 1..65535 }
         notify("Сопряжение…")
         thread(name = "adb-pairing") {
             val port = typedPort ?: waitForPort()
@@ -135,7 +129,7 @@ class PairingService : Service() {
     companion object {
         private const val CHANNEL_ID = "aichanger"
         private const val PORT_WAIT_MS = 5000L
-        private const val PAIRING_CODE_LENGTH = 6
+        internal const val PAIRING_CODE_LENGTH = 6
         private const val OPEN_APP_REQUEST = 1
         private const val NOTIFICATION_ID = 1
         private const val ACTION_CODE = "dev.dquest.aichanger.PAIRING_CODE"
@@ -162,4 +156,14 @@ class PairingService : Service() {
                 NotificationChannel(CHANNEL_ID, "Сопряжение", NotificationManager.IMPORTANCE_HIGH)
             )
     }
+}
+
+/**
+ * Порт (null — не введён) и шестизначный код из ввода в уведомлении; null — кода нет. Порт — число перед кодом:
+ * так подходит и строка «IP-адрес и порт», вставленная целиком («192.168.1.5:37123 123456»).
+ */
+internal fun parsePairingInput(input: String): Pair<Int?, String>? {
+    val numbers = Regex("\\d+").findAll(input).map { it.value }.toList()
+    val code = numbers.lastOrNull()?.takeIf { it.length == PairingService.PAIRING_CODE_LENGTH } ?: return null
+    return numbers.getOrNull(numbers.size - 2)?.toIntOrNull()?.takeIf { it in 1..65535 } to code
 }
