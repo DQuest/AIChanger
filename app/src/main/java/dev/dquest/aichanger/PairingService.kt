@@ -40,7 +40,7 @@ class PairingService : Service() {
         ensureChannel(this)
         startForeground(
             NOTIFICATION_ID,
-            notification("Откройте «Беспроводная отладка» → «Сопряжение по коду» и введите код из окна", withCodeInput = true),
+            notification(getString(R.string.pairing_instructions), withCodeInput = true),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         mdns?.stop()
@@ -54,16 +54,15 @@ class PairingService : Service() {
     /** Код или «порт код» через пробел ([parsePairingInput]). Без порта ждём, пока его найдёт mDNS. */
     private fun onInput(input: String) {
         val (typedPort, code) = parsePairingInput(input) ?: run {
-            notify("Введите шестизначный код из окна сопряжения (или порт и код через пробел)", withCodeInput = true)
+            notify(getString(R.string.pairing_enter_code), withCodeInput = true)
             return
         }
-        notify("Сопряжение…")
+        notify(getString(R.string.pairing_in_progress))
         thread(name = "adb-pairing") {
             val port = typedPort ?: waitForPort()
             if (port == null) {
                 notify(
-                    "Не нашёл окно сопряжения. Введите порт и код через пробел, например 37123 123456. " +
-                        "Порт — число после двоеточия в строке «IP-адрес и порт».",
+                    getString(R.string.pairing_no_port),
                     withCodeInput = true,
                 )
             } else {
@@ -82,16 +81,22 @@ class PairingService : Service() {
         val paired = runCatching { AdbManager.get(this).pair(LOCALHOST, port, code) }
         if (paired.isFailure) {
             // Например, неверный код: оставляем поле ввода, чтобы можно было сразу повторить.
-            notify("Сопряжение не удалось: ${paired.exceptionOrNull()?.message}. Проверьте код и порт", withCodeInput = true)
+            notify(
+                getString(R.string.pairing_failed, paired.exceptionOrNull()?.message ?: getString(R.string.error_unknown)),
+                withCodeInput = true,
+            )
             return
         }
         PowerKeyController.setPaired(true)
         // Отладка сейчас включена пользователем, так что сразу и запускаем.
         val message = if (!PowerKeyController.isEnabled) {
-            "Сопряжение выполнено"
+            getString(R.string.pairing_done)
         } else {
             runCatching { PowerKeyController.ensureRunning(this) }
-                .fold({ "Сопряжение выполнено, перехват кнопки запущен" }, { "Сопряжение выполнено, но запуск не удался: ${it.message}" })
+                .fold(
+                    { getString(R.string.pairing_done_started) },
+                    { getString(R.string.pairing_done_start_failed, describeError(this, it)) },
+                )
         }
         mdns?.stop()
         stopForeground(STOP_FOREGROUND_DETACH)
@@ -105,7 +110,7 @@ class PairingService : Service() {
     private fun notification(text: String, withCodeInput: Boolean = false): Notification {
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("AIChanger: сопряжение")
+            .setContentTitle(getString(R.string.pairing_title))
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setOnlyAlertOnce(!withCodeInput)
@@ -115,8 +120,8 @@ class PairingService : Service() {
                 this, 0, Intent(this, PairingService::class.java).setAction(ACTION_CODE),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
-            val input = RemoteInput.Builder(KEY_CODE).setLabel("Код (или порт и код)").build()
-            builder.addAction(Notification.Action.Builder(null, "Ввести код", reply).addRemoteInput(input).build())
+            val input = RemoteInput.Builder(KEY_CODE).setLabel(getString(R.string.pairing_code_label)).build()
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.pairing_enter_action), reply).addRemoteInput(input).build())
         }
         return builder.build()
     }
@@ -153,7 +158,7 @@ class PairingService : Service() {
         /** Громкий канал: уведомление с полем для кода должно всплыть поверх настроек отладки. */
         private fun ensureChannel(context: Context) =
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Сопряжение", NotificationManager.IMPORTANCE_HIGH)
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.channel_pairing), NotificationManager.IMPORTANCE_HIGH)
             )
     }
 }

@@ -46,8 +46,8 @@ object PowerKeyController {
     /** Демон этой версии работает, но кнопку не перехватывает (например, не нашёл её); null — всё в порядке. */
     @Volatile var daemonProblem: String? = null
         private set
-    /** Причина последнего неудачного запуска демона, null — запуск не падал или ещё не пробовали. */
-    @Volatile var lastLaunchError: String? = null
+    /** Последний неудачный запуск демона ([describeError] — текст для экрана), null — запуск не падал или ещё не пробовали. */
+    @Volatile var lastLaunchError: Throwable? = null
         private set
     @Volatile var launching = false
         private set
@@ -55,7 +55,7 @@ object PowerKeyController {
      * Почему при выключении не удалось вернуть прежнего системного ассистента (демона уже не было, а adb без Wi-Fi
      * не подключился); null — вернули или возвращать нечего. Повторяем при открытии приложения ([startIfNeeded]).
      */
-    @Volatile var lastStopError: String? = null
+    @Volatile var lastStopError: Throwable? = null
         private set
     private val stopping = AtomicBoolean(false)
     /** Запуск отложен до подключения к Wi-Fi: его ждёт [AutoStartService] с уведомлением. */
@@ -227,21 +227,21 @@ object PowerKeyController {
                 // понадобится при следующем запуске: не даём ему истечь и здесь.
                 DaemonLauncher.disableAuthorizationTimeout(context)
             } else {
-                check(isPaired) { "сначала выполните сопряжение с беспроводной отладкой" }
+                if (!isPaired) throw NotPairedException()
                 DaemonLauncher.launch(context, isVoiceMode, ::newToken)
             }
             // Демон после запуска вызывает Gemini, а выбранного ассистента узнаёт только отсюда.
             applyAssistant()
             lastLaunchError = null
         } catch (e: PairingLostException) {
-            lastLaunchError = e.message
+            lastLaunchError = e
             // Ключ adbd больше не узнаёт: без нового сопряжения запуск не пройдёт. Сбрасываем его, и экран сам
             // откроет мастер на шаге сопряжения, а автозапуск не будет зря включать отладку.
             prefs.edit().putBoolean(KEY_PAIRED, false).putBoolean(KEY_PAIRING_LOST, true).apply()
             notifyListeners()
             throw e
         } catch (e: Exception) {
-            lastLaunchError = e.message
+            lastLaunchError = e
             throw e
         } finally {
             launching = false
@@ -288,7 +288,7 @@ object PowerKeyController {
             lastStopError = null
         } else if (restoreRole != null) {
             // Системным остался ассистент, выбранный в AIChanger: говорим об этом, а не молчим.
-            lastStopError = result.exceptionOrNull()?.message ?: "неизвестная ошибка"
+            lastStopError = result.exceptionOrNull()
         }
     }
 

@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Русский. Английский — в values/strings.xml (для всех остальных языков); ключи в обоих файлах одинаковые. -->
+<resources>
+    <!-- Главный экран: состояние -->
+    <string name="status_problem_title">Не работает</string>
+    <string name="status_running_title">Работает</string>
+    <string name="status_running_text">Удерживайте кнопку питания — откроется %1$s</string>
+    <string name="assistant_generic">ассистент</string>
+    <string name="status_untrusted_wifi_title">Другая сеть Wi-Fi</string>
+    <string name="status_waiting_wifi_title">Ждёт Wi-Fi</string>
+    <string name="status_wifi_off_title">Wi-Fi выключен</string>
+    <string name="untrusted_reason">В этой сети беспроводная отладка не разрешена.</string>
+    <string name="wifi_wait_text">Перехват запустится сам, как только телефон подключится к Wi-Fi, в котором настраивали AIChanger.</string>
+    <string name="status_launching_title">Запускается…</string>
+    <string name="status_launching_text">Это займёт несколько секунд</string>
+    <string name="status_stop_error_title">Прежний ассистент не вернулся</string>
+    <string name="status_stop_error_text">%1$s Ассистентом телефона пока остаётся выбранный в AIChanger; повторим при следующем открытии.</string>
+    <string name="status_off_title">Выключено</string>
+    <string name="status_off_text">Кнопка питания не перехватывается. BlueLM, если нужен, включите в настройках телефона</string>
+    <string name="status_failed_title">Не запустилось</string>
+    <string name="status_not_started_title">Не запущено</string>
+    <string name="status_not_started_text">Запустится через пару секунд</string>
+    <string name="action_retry">Повторить</string>
+    <string name="action_enable_again">Включить снова</string>
+    <string name="action_enable">Включить</string>
+    <string name="action_open_wifi">Открыть Wi-Fi</string>
+
+    <!-- Ошибки запуска и выключения -->
+    <string name="error_pairing_lost">Нужно заново выполнить сопряжение.</string>
+    <string name="error_not_paired">Сначала выполните сопряжение с беспроводной отладкой.</string>
+    <string name="error_untrusted_wifi">В этой сети Wi-Fi беспроводная отладка не разрешена. Подключитесь к сети, в которой настраивали AIChanger.</string>
+    <string name="error_no_wifi">Нет Wi-Fi. Подключитесь к сети, в которой настраивали AIChanger.</string>
+    <string name="error_adb_connect">Не удалось подключиться к беспроводной отладке. Проверьте, что телефон в той же сети Wi-Fi, что и при настройке.</string>
+    <string name="error_enable_wireless_debugging">Включите «Беспроводная отладка» в параметрах разработчика и повторите.</string>
+    <string name="error_daemon_no_answer">Служба не ответила после запуска.</string>
+    <string name="error_unknown">Неизвестная ошибка</string>
+
+    <!-- Проблемы, о которых сообщает служба -->
+    <string name="problem_no_power_key">Кнопка питания не найдена среди устройств ввода</string>
+    <string name="problem_power_key_unreadable">Не читается кнопка питания (%1$s): %2$s</string>
+
+    <!-- Главный экран: ассистенты -->
+    <string name="section_assistant">Ассистент</string>
+    <string name="no_assistants">Не найдено ни одного ассистента. Установите Gemini, Claude, ChatGPT, Perplexity или Алису.</string>
+    <string name="role_changed_gemini">Gemini вызывается через ассистента телефона, поэтому AIChanger назначил им Google.</string>
+    <string name="role_changed_other">%1$s работает только как ассистент телефона, поэтому AIChanger назначил его им.</string>
+    <string name="role_restore_note">%1$s Прежний вернётся, если выбрать другого или выключить AIChanger.</string>
+    <string name="gemini_listen_title">Сразу слушать</string>
+    <string name="gemini_listen_on">Gemini откроется с включённым микрофоном</string>
+    <string name="gemini_listen_off">Откроется окно Gemini, микрофон — по кнопке</string>
+    <string name="tip_power_menu_title">Меню питания</string>
+    <string name="tip_power_menu_text">Держите кнопку дольше, около 2 секунд</string>
+
+    <!-- Главный экран: низ и сведения -->
+    <string name="action_turn_off">Выключить AIChanger</string>
+    <string name="action_setup_again">Настроить заново</string>
+    <string name="details_show">Сведения</string>
+    <string name="details_hide">Скрыть сведения</string>
+    <string name="details_version">Версия %1$s</string>
+    <string name="details_no_daemon">Служба не запущена</string>
+    <string name="details_last_error">Последняя ошибка: %1$s</string>
+    <string name="status_devices">Устройства: %1$s</string>
+    <string name="status_thresholds">Порог удержания: %1$s мс, меню питания: %2$s мс</string>
+    <string name="status_assistant">Ассистент: %1$s</string>
+    <string name="status_mode_voice">Режим: голосовой ввод</string>
+    <string name="status_mode_window">Режим: окно без прослушивания</string>
+    <string name="status_fired">Вызовов ассистента: %1$s</string>
+    <string name="status_error">Ошибка: %1$s</string>
+    <string name="status_launch_error">Ошибка запуска ассистента: %1$s</string>
+    <string name="settings_open_failed">Не удалось открыть настройки</string>
+
+    <!-- Мастер настройки -->
+    <string name="wizard_step">Шаг %1$d из %2$d</string>
+    <string name="wizard_bluelm_title">Выключите BlueLM на кнопке питания</string>
+    <string name="wizard_bluelm_body">AIChanger не меняет настройки BlueLM. Если BlueLM тоже вызывается удержанием кнопки питания, откроются оба ассистента. Найдите в настройках телефона BlueLM (蓝心小V) и выключите его вызов кнопкой питания. Если потом выключите AIChanger, BlueLM можно будет включить там же.</string>
+    <string name="wizard_bluelm_done">Готово, выключил</string>
+    <string name="wizard_dev_title">Включите параметры разработчика</string>
+    <string name="wizard_dev_body">Они нужны, чтобы AIChanger мог перехватывать кнопку питания. Откройте «О телефоне» и нажмите 7 раз на номер версии ПО, пока не появится сообщение, что вы стали разработчиком. Потом вернитесь сюда.</string>
+    <string name="wizard_dev_open">Открыть «О телефоне»</string>
+    <string name="wizard_dev_already">Уже включены</string>
+    <string name="wizard_pair_title">Подключите беспроводную отладку</string>
+    <string name="wizard_pair_open">Открыть настройки отладки</string>
+    <string name="wizard_pair_step1">Включите «Беспроводная отладка».</string>
+    <string name="wizard_pair_step2">Отметьте «Всегда разрешать в этой сети».</string>
+    <string name="wizard_pair_step3">Нажмите «Сопряжение по коду».</string>
+    <string name="wizard_pair_step4">Введите показанный код в уведомлении AIChanger.</string>
+    <string name="wizard_pair_lost">Прежнее сопряжение перестало действовать: телефон забывает его, если отладкой неделю не пользовались. Выполните его заново — теперь AIChanger отключает этот срок, и больше оно не истечёт.</string>
+    <string name="wizard_pair_wifi_hint">Нужен Wi-Fi. Код вводится один раз, дальше AIChanger подключается сам.</string>
+    <string name="wizard_pair_notifications_off">Уведомления AIChanger запрещены, а код вводится в уведомлении. Кнопка ниже попросит их разрешить или откроет настройки уведомлений.</string>
+    <string name="wizard_pair_waiting">Ждём код сопряжения из уведомления…</string>
+    <string name="wizard_autostart_title">Разрешите автозапуск</string>
+    <string name="wizard_autostart_body">Тогда кнопка будет работать и после перезагрузки телефона. Найдите AIChanger в списке и включите переключатель.</string>
+    <string name="wizard_autostart_open">Открыть автозапуск</string>
+    <string name="wizard_done">Готово</string>
+    <string name="wizard_background_title">Разрешите работу в фоне</string>
+    <string name="wizard_background_body">Иначе vivo усыпит AIChanger, пока он ждёт Wi-Fi после перезагрузки, и кнопка не заработает. Нажмите на AIChanger в списке и выберите «Разрешить высокое энергопотребление».</string>
+    <string name="wizard_background_open">Открыть управление питанием</string>
+
+    <!-- Уведомления: запуск -->
+    <string name="channel_status">Запуск перехвата</string>
+    <string name="notif_starting">Запуск перехвата кнопки…</string>
+    <string name="notif_start_failed">Не удалось запустить перехват кнопки: %1$s</string>
+    <string name="notif_wifi_not_connected">Wi-Fi не подключён</string>
+
+    <!-- Уведомления: сопряжение -->
+    <string name="channel_pairing">Сопряжение</string>
+    <string name="pairing_title">AIChanger: сопряжение</string>
+    <string name="pairing_instructions">Откройте «Беспроводная отладка» → «Сопряжение по коду» и введите код из окна</string>
+    <string name="pairing_enter_code">Введите шестизначный код из окна сопряжения (или порт и код через пробел)</string>
+    <string name="pairing_in_progress">Сопряжение…</string>
+    <string name="pairing_no_port">Не нашёл окно сопряжения. Введите порт и код через пробел, например 37123 123456. Порт — число после двоеточия в строке «IP-адрес и порт».</string>
+    <string name="pairing_failed">Сопряжение не удалось: %1$s. Проверьте код и порт</string>
+    <string name="pairing_done">Сопряжение выполнено</string>
+    <string name="pairing_done_started">Сопряжение выполнено, перехват кнопки запущен</string>
+    <string name="pairing_done_start_failed">Сопряжение выполнено, но запуск не удался: %1$s</string>
+    <string name="pairing_code_label">Код (или порт и код)</string>
+    <string name="pairing_enter_action">Ввести код</string>
+</resources>

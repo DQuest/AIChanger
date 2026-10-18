@@ -31,8 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.dquest.aichanger.R
 import dev.dquest.aichanger.SetupStep
 
 /**
@@ -64,77 +66,62 @@ fun SetupWizard(state: UiState, actions: UiActions) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppIcon(40.dp)
                 Spacer(Modifier.width(12.dp))
-                Text("AIChanger", style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
             }
             Spacer(Modifier.height(28.dp))
             StepProgress(step)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Шаг $step из $STEPS",
+                stringResource(R.string.wizard_step, step, STEPS),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(20.dp))
             when (step) {
                 1 -> Step(
-                    title = "Выключите BlueLM на кнопке питания",
-                    body = "AIChanger не меняет настройки BlueLM. Если BlueLM тоже вызывается удержанием кнопки питания, " +
-                        "откроются оба ассистента. Найдите в настройках телефона BlueLM (蓝心小V) и выключите его вызов " +
-                        "кнопкой питания. Если потом выключите AIChanger, BlueLM можно будет включить там же.",
-                    primary = "Готово, выключил" to { actions.completeSetupStep(SetupStep.BLUELM_OFF) },
+                    title = stringResource(R.string.wizard_bluelm_title),
+                    body = stringResource(R.string.wizard_bluelm_body),
+                    primary = stringResource(R.string.wizard_bluelm_done) to { actions.completeSetupStep(SetupStep.BLUELM_OFF) },
                 )
                 2 -> Step(
-                    title = "Включите параметры разработчика",
-                    body = "Они нужны, чтобы AIChanger мог перехватывать кнопку питания. " +
-                        "Откройте «О телефоне» и нажмите 7 раз на номер версии ПО, пока не появится сообщение, " +
-                        "что вы стали разработчиком. Потом вернитесь сюда.",
-                    primary = "Открыть «О телефоне»" to actions::openDeviceInfo,
-                    secondary = "Уже включены" to { actions.completeSetupStep(SetupStep.DEVELOPER_OPTIONS) },
+                    title = stringResource(R.string.wizard_dev_title),
+                    body = stringResource(R.string.wizard_dev_body),
+                    primary = stringResource(R.string.wizard_dev_open) to actions::openDeviceInfo,
+                    secondary = stringResource(R.string.wizard_dev_already) to { actions.completeSetupStep(SetupStep.DEVELOPER_OPTIONS) },
                 )
                 3 -> Step(
-                    title = "Подключите беспроводную отладку",
+                    title = stringResource(R.string.wizard_pair_title),
                     body = null,
-                    primary = "Открыть настройки отладки" to {
+                    primary = stringResource(R.string.wizard_pair_open) to {
                         pairingStarted = true
                         actions.startPairing()
                     },
                 ) {
                     Instructions(
-                        "Включите «Беспроводная отладка».",
-                        "Отметьте «Всегда разрешать в этой сети».",
-                        "Нажмите «Сопряжение по коду».",
-                        "Введите показанный код в уведомлении AIChanger.",
+                        stringResource(R.string.wizard_pair_step1),
+                        stringResource(R.string.wizard_pair_step2),
+                        stringResource(R.string.wizard_pair_step3),
+                        stringResource(R.string.wizard_pair_step4),
                     )
-                    if (state.pairingLost) {
-                        Hint(
-                            "Прежнее сопряжение перестало действовать: телефон забывает его, если отладкой неделю " +
-                                "не пользовались. Выполните его заново — теперь AIChanger отключает этот срок, и больше " +
-                                "оно не истечёт."
-                        )
-                    }
-                    Hint("Нужен Wi-Fi. Код вводится один раз, дальше AIChanger подключается сам.")
+                    if (state.pairingLost) Hint(stringResource(R.string.wizard_pair_lost))
+                    Hint(stringResource(R.string.wizard_pair_wifi_hint))
                     if (!state.notificationsEnabled) {
-                        Hint(
-                            "Уведомления AIChanger запрещены, а код вводится в уведомлении. " +
-                                "Кнопка ниже попросит их разрешить или откроет настройки уведомлений."
-                        )
+                        Hint(stringResource(R.string.wizard_pair_notifications_off))
                     } else if (pairingStarted) {
-                        Waiting("Ждём код сопряжения из уведомления…")
+                        Waiting(stringResource(R.string.wizard_pair_waiting))
                     }
                 }
                 4 -> Step(
-                    title = "Разрешите автозапуск",
-                    body = "Тогда кнопка будет работать и после перезагрузки телефона. " +
-                        "Найдите AIChanger в списке и включите переключатель.",
-                    primary = "Открыть автозапуск" to actions::openAutoStart,
-                    secondary = "Готово" to { actions.completeSetupStep(SetupStep.AUTOSTART) },
+                    title = stringResource(R.string.wizard_autostart_title),
+                    body = stringResource(R.string.wizard_autostart_body),
+                    primary = stringResource(R.string.wizard_autostart_open) to actions::openAutoStart,
+                    secondary = stringResource(R.string.wizard_done) to { actions.completeSetupStep(SetupStep.AUTOSTART) },
                 )
                 else -> Step(
-                    title = "Разрешите работу в фоне",
-                    body = "Иначе vivo усыпит AIChanger, пока он ждёт Wi-Fi после перезагрузки, и кнопка не заработает. " +
-                        "Нажмите на AIChanger в списке и выберите «Разрешить высокое энергопотребление».",
-                    primary = "Открыть управление питанием" to actions::openBackgroundPower,
-                    secondary = "Готово" to actions::finishSetup,
+                    title = stringResource(R.string.wizard_background_title),
+                    body = stringResource(R.string.wizard_background_body),
+                    primary = stringResource(R.string.wizard_background_open) to actions::openBackgroundPower,
+                    secondary = stringResource(R.string.wizard_done) to actions::finishSetup,
                 )
             }
         }

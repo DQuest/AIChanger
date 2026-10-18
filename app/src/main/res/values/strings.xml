@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English: used for every language except Russian (values-ru/strings.xml). Keep the keys in both files in sync. -->
+<resources>
+    <string name="app_name" translatable="false">AIChanger</string>
+
+    <!-- Main screen: status -->
+    <string name="status_problem_title">Not working</string>
+    <string name="status_running_title">Running</string>
+    <string name="status_running_text">Hold the power button to open %1$s</string>
+    <string name="assistant_generic">the assistant</string>
+    <string name="status_untrusted_wifi_title">Another Wi-Fi network</string>
+    <string name="status_waiting_wifi_title">Waiting for Wi-Fi</string>
+    <string name="status_wifi_off_title">Wi-Fi is off</string>
+    <string name="untrusted_reason">Wireless debugging isn\'t allowed on this network.</string>
+    <string name="wifi_wait_text">Interception will start by itself as soon as the phone connects to the Wi-Fi network AIChanger was set up on.</string>
+    <string name="status_launching_title">Starting…</string>
+    <string name="status_launching_text">This takes a few seconds</string>
+    <string name="status_stop_error_title">The previous assistant wasn\'t restored</string>
+    <string name="status_stop_error_text">%1$s The assistant chosen in AIChanger stays the phone\'s assistant for now; the app will retry next time it opens.</string>
+    <string name="status_off_title">Off</string>
+    <string name="status_off_text">The power button isn\'t intercepted. Turn BlueLM back on in the phone settings if you need it</string>
+    <string name="status_failed_title">Failed to start</string>
+    <string name="status_not_started_title">Not running</string>
+    <string name="status_not_started_text">Will start in a couple of seconds</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_enable_again">Turn on again</string>
+    <string name="action_enable">Turn on</string>
+    <string name="action_open_wifi">Open Wi-Fi</string>
+
+    <!-- Start and stop errors -->
+    <string name="error_pairing_lost">You need to pair again.</string>
+    <string name="error_not_paired">Pair with wireless debugging first.</string>
+    <string name="error_untrusted_wifi">Wireless debugging isn\'t allowed on this Wi-Fi network. Connect to the network AIChanger was set up on.</string>
+    <string name="error_no_wifi">No Wi-Fi. Connect to the network AIChanger was set up on.</string>
+    <string name="error_adb_connect">Couldn\'t connect to wireless debugging. Check that the phone is on the same Wi-Fi network as during setup.</string>
+    <string name="error_enable_wireless_debugging">Turn on Wireless debugging in Developer options and try again.</string>
+    <string name="error_daemon_no_answer">The service didn\'t respond after starting.</string>
+    <string name="error_unknown">Unknown error</string>
+
+    <!-- Problems reported by the service -->
+    <string name="problem_no_power_key">The power button wasn\'t found among input devices</string>
+    <string name="problem_power_key_unreadable">Can\'t read the power button (%1$s): %2$s</string>
+
+    <!-- Main screen: assistants -->
+    <string name="section_assistant">Assistant</string>
+    <string name="no_assistants">No assistants found. Install Gemini, Claude, ChatGPT, Perplexity or Alice.</string>
+    <string name="role_changed_gemini">Gemini is invoked through the phone\'s assistant, so AIChanger made Google the phone\'s assistant.</string>
+    <string name="role_changed_other">%1$s works only as the phone\'s assistant, so AIChanger made it the phone\'s assistant.</string>
+    <string name="role_restore_note">%1$s The previous one returns when you pick another assistant or turn AIChanger off.</string>
+    <string name="gemini_listen_title">Listen right away</string>
+    <string name="gemini_listen_on">Gemini opens with the microphone on</string>
+    <string name="gemini_listen_off">Gemini\'s window opens; tap the mic to talk</string>
+    <string name="tip_power_menu_title">Power menu</string>
+    <string name="tip_power_menu_text">Hold the button longer, about 2 seconds</string>
+
+    <!-- Main screen: bottom and details -->
+    <string name="action_turn_off">Turn off AIChanger</string>
+    <string name="action_setup_again">Set up again</string>
+    <string name="details_show">Details</string>
+    <string name="details_hide">Hide details</string>
+    <string name="details_version">Version %1$s</string>
+    <string name="details_no_daemon">The service isn\'t running</string>
+    <string name="details_last_error">Last error: %1$s</string>
+    <string name="status_devices">Devices: %1$s</string>
+    <string name="status_thresholds">Hold threshold: %1$s ms, power menu: %2$s ms</string>
+    <string name="status_assistant">Assistant: %1$s</string>
+    <string name="status_mode_voice">Mode: voice input</string>
+    <string name="status_mode_window">Mode: window without listening</string>
+    <string name="status_fired">Assistant calls: %1$s</string>
+    <string name="status_error">Error: %1$s</string>
+    <string name="status_launch_error">Assistant launch error: %1$s</string>
+    <string name="settings_open_failed">Couldn\'t open the settings</string>
+
+    <!-- Setup wizard -->
+    <string name="wizard_step">Step %1$d of %2$d</string>
+    <string name="wizard_bluelm_title">Turn off BlueLM on the power button</string>
+    <string name="wizard_bluelm_body">AIChanger doesn\'t change BlueLM settings. If holding the power button also calls BlueLM, both assistants will open. Find BlueLM (蓝心小V) in the phone settings and turn off calling it with the power button. If you turn AIChanger off later, you can turn BlueLM back on there.</string>
+    <string name="wizard_bluelm_done">Done, it\'s off</string>
+    <string name="wizard_dev_title">Turn on Developer options</string>
+    <string name="wizard_dev_body">AIChanger needs them to intercept the power button. Open "About phone" and tap the software version 7 times until a message says you are now a developer. Then come back here.</string>
+    <string name="wizard_dev_open">Open "About phone"</string>
+    <string name="wizard_dev_already">Already on</string>
+    <string name="wizard_pair_title">Connect wireless debugging</string>
+    <string name="wizard_pair_open">Open debugging settings</string>
+    <string name="wizard_pair_step1">Turn on "Wireless debugging".</string>
+    <string name="wizard_pair_step2">Check "Always allow on this network".</string>
+    <string name="wizard_pair_step3">Tap "Pair device with pairing code".</string>
+    <string name="wizard_pair_step4">Enter the code shown in the AIChanger notification.</string>
+    <string name="wizard_pair_lost">The previous pairing stopped working: the phone forgets it if debugging isn\'t used for a week. Pair again — AIChanger now turns that time limit off, so it won\'t expire again.</string>
+    <string name="wizard_pair_wifi_hint">Wi-Fi is required. You enter the code once; after that AIChanger connects by itself.</string>
+    <string name="wizard_pair_notifications_off">AIChanger notifications are blocked, but the code is entered in a notification. The button below will ask to allow them or open the notification settings.</string>
+    <string name="wizard_pair_waiting">Waiting for the pairing code from the notification…</string>
+    <string name="wizard_autostart_title">Allow autostart</string>
+    <string name="wizard_autostart_body">Then the button keeps working after the phone restarts. Find AIChanger in the list and turn the switch on.</string>
+    <string name="wizard_autostart_open">Open autostart</string>
+    <string name="wizard_done">Done</string>
+    <string name="wizard_background_title">Allow background activity</string>
+    <string name="wizard_background_body">Otherwise vivo puts AIChanger to sleep while it waits for Wi-Fi after a restart, and the button won\'t work. Tap AIChanger in the list and choose "Allow high power consumption".</string>
+    <string name="wizard_background_open">Open power management</string>
+
+    <!-- Notifications: startup -->
+    <string name="channel_status">Interception startup</string>
+    <string name="notif_starting">Starting button interception…</string>
+    <string name="notif_start_failed">Couldn\'t start button interception: %1$s</string>
+    <string name="notif_wifi_not_connected">Wi-Fi not connected</string>
+
+    <!-- Notifications: pairing -->
+    <string name="channel_pairing">Pairing</string>
+    <string name="pairing_title">AIChanger: pairing</string>
+    <string name="pairing_instructions">Open "Wireless debugging" → "Pair device with pairing code" and enter the code from the dialog</string>
+    <string name="pairing_enter_code">Enter the six-digit code from the pairing dialog (or the port and the code separated by a space)</string>
+    <string name="pairing_in_progress">Pairing…</string>
+    <string name="pairing_no_port">Couldn\'t find the pairing dialog. Enter the port and the code separated by a space, for example 37123 123456. The port is the number after the colon in the "IP address &amp; port" line.</string>
+    <string name="pairing_failed">Pairing failed: %1$s. Check the code and the port</string>
+    <string name="pairing_done">Paired</string>
+    <string name="pairing_done_started">Paired, button interception is running</string>
+    <string name="pairing_done_start_failed">Paired, but starting failed: %1$s</string>
+    <string name="pairing_code_label">Code (or port and code)</string>
+    <string name="pairing_enter_action">Enter code</string>
+</resources>

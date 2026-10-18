@@ -147,7 +147,7 @@ class MainActivity : ComponentActivity(), UiActions {
             } catch (_: SecurityException) {
             }
         }
-        Toast.makeText(this, "Не удалось открыть настройки", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, R.string.settings_open_failed, Toast.LENGTH_SHORT).show()
     }
 
     override fun finishSetup() {

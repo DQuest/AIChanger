@@ -10,13 +10,13 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /** Запуск демона возможен только через беспроводную отладку, а она работает только по Wi-Fi. */
-open class NoWifiException(message: String = "нет подключения к Wi-Fi") : IllegalStateException(message)
+open class NoWifiException(message: String = "no Wi-Fi connection") : IllegalStateException(message)
 
 /**
  * Wi-Fi есть, но беспроводная отладка в этой сети не включается: для неё не разрешено «Всегда разрешать в этой сети».
  * Повторять в той же сети бесполезно, ждать нужно другой сети.
  */
-class UntrustedWifiException : NoWifiException("беспроводная отладка не включается в этой сети Wi-Fi")
+class UntrustedWifiException : NoWifiException("wireless debugging can't be turned on on this Wi-Fi network")
 
 object Wifi {
 

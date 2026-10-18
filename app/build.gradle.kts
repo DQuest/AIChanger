@@ -11,8 +11,8 @@ android {
         applicationId = "dev.dquest.aichanger"
         minSdk = 30
         targetSdk = 36
-        versionCode = 31
-        versionName = "3.9"
+        versionCode = 32
+        versionName = "3.10"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -24,6 +24,11 @@ android {
             // Если включить R8, правила уже на месте: демон запускается по имени класса через app_process.
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+    }
+
+    // Список языков для выбора языка приложения в настройках Android 13+ (values/ — английский, см. resources.properties).
+    androidResources {
+        generateLocaleConfig = true
     }
 
     buildFeatures {
