@@ -1,7 +1,8 @@
 name: Сборка APK
 
 # Debug-APK на каждый push в любую ветку и на pull request; вручную — кнопкой Run workflow во вкладке Actions.
-# Тег v<версия> ещё и выпускает релиз с этим APK и описанием из release-notes/v<версия>.md.
+# Тег v<версия> или ручной запуск на main ещё и выпускает релиз с этим APK и описанием из release-notes/v<версия>.md
+# (при ручном запуске тег v<versionName> создаёт сам релиз).
 on:
   push:
     branches: ["**"]
@@ -70,10 +71,11 @@ jobs:
 
     outputs:
       artifact: AIChanger-${{ steps.version.outputs.name }}-${{ github.run_number }}
+      version: ${{ steps.version.outputs.name }}
 
   # Отдельно от сборки: право на запись (создать релиз) нужно только здесь.
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -86,9 +88,12 @@ jobs:
       - name: Релиз
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          apk="AIChanger-${GITHUB_REF_NAME}.apk"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; else tag="v$VERSION"; fi
+          apk="AIChanger-$tag.apk"
           mv app-debug.apk "$apk"
-          gh release create "$GITHUB_REF_NAME" "$apk" \
-            --title "AIChanger ${GITHUB_REF_NAME#v}" \
-            --notes-file "release-notes/${GITHUB_REF_NAME}.md"
+          # --target нужен при ручном запуске: тега ещё нет, релиз создаёт его на собранном коммите.
+          gh release create "$tag" "$apk" --target "$GITHUB_SHA" \
+            --title "AIChanger ${tag#v}" \
+            --notes-file "release-notes/$tag.md"
