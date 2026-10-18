@@ -11,8 +11,8 @@ android {
         applicationId = "dev.dquest.aichanger"
         minSdk = 30
         targetSdk = 36
-        versionCode = 32
-        versionName = "3.10"
+        versionCode = 33
+        versionName = "3.11"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -21,7 +21,11 @@ android {
 
     buildTypes {
         release {
-            // Если включить R8, правила уже на месте: демон запускается по имени класса через app_process.
+            // Тот же ключ, что у debug-сборок (в CI — секрет CHANGERKEY): release-APK ставится поверх прежних
+            // debug-сборок без удаления, иначе пропали бы сопряжение и настройки.
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
