@@ -44,20 +44,19 @@ class PairingService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         mdns?.stop()
+        // Порт окна сопряжения с прошлого раза уже закрыт: новое окно откроется на другом.
+        pairingPort = -1
         mdns = AdbMdns(this, AdbMdns.SERVICE_TYPE_TLS_PAIRING) { host, port ->
             if (host != null && port > 0) pairingPort = port
         }.also { it.start() }
     }
 
-    /** Код или «порт код» через пробел. Без порта ждём, пока его найдёт mDNS. */
+    /** Код или «порт код» через пробел ([parsePairingInput]). Без порта ждём, пока его найдёт mDNS. */
     private fun onInput(input: String) {
-        val numbers = Regex("\\d+").findAll(input).map { it.value }.toList()
-        val code = numbers.lastOrNull()
-        if (code == null) {
-            notify("Код не введён. Введите код из окна сопряжения", withCodeInput = true)
+        val (typedPort, code) = parsePairingInput(input) ?: run {
+            notify("Введите шестизначный код из окна сопряжения (или порт и код через пробел)", withCodeInput = true)
             return
         }
-        val typedPort = numbers.takeIf { it.size >= 2 }?.first()?.toIntOrNull()
         notify("Сопряжение…")
         thread(name = "adb-pairing") {
             val port = typedPort ?: waitForPort()
@@ -128,20 +127,43 @@ class PairingService : Service() {
     }
 
     companion object {
-        const val CHANNEL_ID = "aichanger"
+        private const val CHANNEL_ID = "aichanger"
         private const val PORT_WAIT_MS = 5000L
+        internal const val PAIRING_CODE_LENGTH = 6
+        private const val OPEN_APP_REQUEST = 1
         private const val NOTIFICATION_ID = 1
         private const val ACTION_CODE = "dev.dquest.aichanger.PAIRING_CODE"
         private const val KEY_CODE = "code"
         private const val LOCALHOST = "127.0.0.1"
 
-        /** Без явного contentIntent прошивка vivo до первой разблокировки пытается подставить свой и пишет ошибку. */
-        fun openAppIntent(context: Context): PendingIntent =
-            PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        /**
+         * Без явного contentIntent прошивка vivo до первой разблокировки пытается подставить свой и пишет ошибку.
+         * CLEAR_TOP и SINGLE_TOP возвращают к уже открытому экрану приложения и закрывают настройки поверх него.
+         * Без них поверх настроек создавался второй экран со своим, пустым состоянием, и «Назад» вёл обратно в настройки.
+         * Код запроса 1, а не 0: по прежнему коду система вернула бы ещё живой PendingIntent без этих флагов.
+         */
+        fun openAppIntent(context: Context): PendingIntent = PendingIntent.getActivity(
+            context,
+            OPEN_APP_REQUEST,
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
 
-        fun ensureChannel(context: Context) =
+        /** Громкий канал: уведомление с полем для кода должно всплыть поверх настроек отладки. */
+        private fun ensureChannel(context: Context) =
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "AIChanger", NotificationManager.IMPORTANCE_HIGH)
+                NotificationChannel(CHANNEL_ID, "Сопряжение", NotificationManager.IMPORTANCE_HIGH)
             )
     }
+}
+
+/**
+ * Порт (null — не введён) и шестизначный код из ввода в уведомлении; null — кода нет. Порт — число перед кодом:
+ * так подходит и строка «IP-адрес и порт», вставленная целиком («192.168.1.5:37123 123456»).
+ */
+internal fun parsePairingInput(input: String): Pair<Int?, String>? {
+    val numbers = Regex("\\d+").findAll(input).map { it.value }.toList()
+    val code = numbers.lastOrNull()?.takeIf { it.length == PairingService.PAIRING_CODE_LENGTH } ?: return null
+    return numbers.getOrNull(numbers.size - 2)?.toIntOrNull()?.takeIf { it in 1..65535 } to code
 }

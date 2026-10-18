@@ -32,6 +32,8 @@ object DaemonLauncher {
     private const val MARKS = "launcher_marks"
     private const val WIFI_WAIT_MS = 30_000L
     private const val CONNECT_ATTEMPTS = 5
+    // Столько раз система выключила отладку сразу после включения: значит, сеть не доверенная.
+    private const val UNTRUSTED_AFTER = 2
     private const val CONNECT_TIMEOUT_MS = 15_000L
     private const val DAEMON_WAIT_MS = 10_000L
     private const val POLL_MS = 500L
@@ -54,22 +56,39 @@ object DaemonLauncher {
     fun canWriteSecureSettings(context: Context) =
         context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
 
-    /** Выполняется в фоновом потоке, бросает исключение с понятным текстом при ошибке. */
-    fun launch(context: Context, token: String, voice: Boolean) {
+    fun isWirelessAdbOn(context: Context) = Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0) == 1
+
+    /** Система выключила беспроводную отладку, пока мы искали порт: ждать порт дальше бессмысленно. */
+    private class WirelessAdbOffException : IOException("система выключила беспроводную отладку")
+
+    /**
+     * Выполняется в фоновом потоке, бросает исключение с понятным текстом при ошибке.
+     * [newToken] вызывается перед самой командой запуска: если до неё не дошло (нет Wi-Fi, не подключились),
+     * прежний демон продолжает работать со старым токеном, и приложение по-прежнему может его остановить.
+     */
+    fun launch(context: Context, voice: Boolean, newToken: () -> String) {
+        lateinit var token: String
         withWirelessAdb(context) { adb ->
             if (!canWriteSecureSettings(context)) {
                 shell(adb, "pm grant ${context.packageName} ${Manifest.permission.WRITE_SECURE_SETTINGS}")
             }
+            token = newToken()
             Log.i(TAG, "daemon launch: ${shell(adb, launchCommand(context, token, voice))}")
         }
         check(waitForDaemon(token)) { "демон не ответил после запуска" }
     }
 
-    /** Возвращает BlueLM на кнопку и прежнего системного ассистента, когда демона, который сделал бы это сам, уже нет. */
+    /**
+     * Возвращает прежнего системного ассистента, когда демон не ответил на `stop`.
+     * Демон при этом мог и работать, но не принять токен, поэтому сначала его завершаем.
+     */
     fun restoreSystem(context: Context, restoreRole: String?) {
         withWirelessAdb(context) { adb ->
-            shell(adb, DaemonProtocol.blueLmCommand(true))
-            restoreRole?.let { shell(adb, DaemonProtocol.assistantRoleCommand(it)) }
+            shell(adb, killCommand(context))
+            // Строку собирает оболочка adb, поэтому пропускаем только имя пакета.
+            restoreRole?.takeIf(DaemonProtocol::isValidRestore)?.let {
+                shell(adb, DaemonProtocol.assistantRoleArgs(it).joinToString(" "))
+            }
         }
     }
 
@@ -112,16 +131,19 @@ object DaemonLauncher {
      */
     private fun launchCommand(context: Context, token: String, voice: Boolean): String {
         val mode = if (voice) DaemonProtocol.MODE_VOICE else DaemonProtocol.MODE_WINDOW
-        return "for n in ${DaemonProtocol.PROCESS_NAME} ${context.packageName}:powerkey; do " +
-            "p=\$(pidof \$n) && kill \$p; done; sleep 0.3; " +
+        return "${killCommand(context)}; sleep 0.3; " +
             "CLASSPATH=${context.applicationInfo.sourceDir} setsid app_process /system/bin " +
             "--nice-name=${DaemonProtocol.PROCESS_NAME} ${PowerKeyDaemon::class.java.name} $token $mode " +
             "</dev/null >/dev/null 2>&1 & sleep 1"
     }
 
+    private fun killCommand(context: Context) =
+        "for n in ${DaemonProtocol.PROCESS_NAME} ${context.packageName}:powerkey; do p=\$(pidof \$n) && kill \$p; done"
+
     private fun withAdb(context: Context, block: (AdbManager) -> Unit) {
         val adb = AdbManager.get(context)
         var lastError: Exception? = null
+        var turnedOff = 0
         repeat(CONNECT_ATTEMPTS) { attempt ->
             if (attempt > 0) restartWirelessAdb(context)
             try {
@@ -133,10 +155,16 @@ object DaemonLauncher {
                     }
                     return
                 }
+            } catch (e: WirelessAdbOffException) {
+                lastError = e
+                Log.w(TAG, "ADB connect attempt ${attempt + 1}: wireless debugging turned off by the system")
+                // Сразу после загрузки система выключает отладку, если Wi-Fi ещё не готов, и перезапуск это лечит.
+                // Выключила снова — значит, сеть не доверенная: в ней каждое включение лишь показывает диалог
+                // о разрешении отладки, а перебор всех попыток занял бы около двух минут.
+                if (++turnedOff >= UNTRUSTED_AFTER) throw UntrustedWifiException()
             } catch (e: Exception) {
                 lastError = e
-                val adbWifi = Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0)
-                Log.w(TAG, "ADB connect attempt ${attempt + 1} failed, adb_wifi_enabled=$adbWifi", e)
+                Log.w(TAG, "ADB connect attempt ${attempt + 1} failed, adb_wifi_enabled=${isWirelessAdbOn(context)}", e)
             }
             Thread.sleep(POLL_MS * 4)
         }
@@ -168,6 +196,7 @@ object DaemonLauncher {
                 }
                 rejected += port
             }
+            if (!isWirelessAdbOn(context)) throw WirelessAdbOffException()
             // Сразу после включения отладки adbd открывает порт не мгновенно.
             Thread.sleep(POLL_MS)
         } while (System.currentTimeMillis() < deadline)
@@ -199,43 +228,50 @@ object DaemonLauncher {
     private fun findOpenPorts(ports: IntRange): List<Int> {
         val open = mutableListOf<Int>()
         Selector.open().use { selector ->
-            for (batch in ports.chunked(SCAN_BATCH)) {
-                // Считаем незавершённые сами: отменённые ключи остаются в selector.keys() до следующего select.
-                var pending = 0
-                for (port in batch) {
-                    val channel = SocketChannel.open().apply { configureBlocking(false) }
-                    try {
-                        if (channel.connect(InetSocketAddress(LOOPBACK, port))) {
-                            open += port
+            try {
+                for (batch in ports.chunked(SCAN_BATCH)) {
+                    // Считаем незавершённые сами: отменённые ключи остаются в selector.keys() до следующего select.
+                    var pending = 0
+                    for (port in batch) {
+                        val channel = SocketChannel.open()
+                        try {
+                            channel.configureBlocking(false)
+                            if (channel.connect(InetSocketAddress(LOOPBACK, port))) {
+                                open += port
+                                channel.close()
+                            } else {
+                                channel.register(selector, SelectionKey.OP_CONNECT, port)
+                                pending++
+                            }
+                        } catch (_: IOException) {
                             channel.close()
-                        } else {
-                            channel.register(selector, SelectionKey.OP_CONNECT, port)
-                            pending++
                         }
-                    } catch (_: IOException) {
-                        channel.close()
                     }
-                }
-                val deadline = System.currentTimeMillis() + SCAN_CONNECT_TIMEOUT_MS
-                while (pending > 0) {
-                    val left = deadline - System.currentTimeMillis()
-                    if (left <= 0) break
-                    selector.select(left)
-                    for (key in selector.selectedKeys()) {
-                        val channel = key.channel() as SocketChannel
-                        if (runCatching { channel.finishConnect() }.getOrDefault(false)) open += key.attachment() as Int
+                    val deadline = System.currentTimeMillis() + SCAN_CONNECT_TIMEOUT_MS
+                    while (pending > 0) {
+                        val left = deadline - System.currentTimeMillis()
+                        if (left <= 0) break
+                        selector.select(left)
+                        for (key in selector.selectedKeys()) {
+                            val channel = key.channel() as SocketChannel
+                            if (runCatching { channel.finishConnect() }.getOrDefault(false)) open += key.attachment() as Int
+                            key.cancel()
+                            channel.close()
+                            pending--
+                        }
+                        selector.selectedKeys().clear()
+                    }
+                    // Не ответившие за отведённое время закрываем; selectNow снимает отменённые ключи.
+                    for (key in selector.keys()) {
                         key.cancel()
-                        channel.close()
-                        pending--
+                        key.channel().close()
                     }
-                    selector.selectedKeys().clear()
+                    selector.selectNow()
                 }
-                // Не ответившие за отведённое время закрываем; selectNow снимает отменённые ключи.
-                for (key in selector.keys()) {
-                    key.cancel()
-                    key.channel().close()
-                }
-                selector.selectNow()
+            } finally {
+                // Если SocketChannel.open() упал (например, кончились дескрипторы), закрываем уже открытые:
+                // закрытие селектора сами каналы не закрывает, и они висели бы до сборки мусора.
+                for (key in selector.keys()) key.channel().close()
             }
         }
         return open

@@ -2,14 +2,12 @@ package dev.dquest.aichanger
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.service.voice.VoiceInteractionService
 import dev.dquest.aichanger.daemon.DaemonProtocol
 
 /** Ассистент, которого можно вызывать кнопкой: [target] в формате [DaemonProtocol.ASSISTANT]. */
-data class Assistant(val label: String, val target: String) {
-    /** Вызов через роль системного ассистента: при выборе меняется системный ассистент телефона. */
-    val changesSystemAssistant get() = !DaemonProtocol.isDirect(target) && target != DaemonProtocol.GOOGLE_APP
-}
+data class Assistant(val label: String, val target: String)
 
 object Assistants {
 
@@ -24,7 +22,7 @@ object Assistants {
     /**
      * Ассистенты, которые открываются поверх экрана: признак — своя служба голосового ассистента
      * (VoiceInteractionService). Приложения без неё, например DeepSeek, открылись бы целиком, их не берём.
-     * BlueLM (пакеты vivo) не показываем: его и заменяем, а вернуть его можно выключением перехвата.
+     * BlueLM (пакеты vivo) не показываем: его и заменяем.
      */
     fun find(context: Context): List<Assistant> {
         val pm = context.packageManager
@@ -32,14 +30,20 @@ object Assistants {
             .map { it.serviceInfo.packageName }
             .distinct()
             .filter { it != context.packageName && !it.startsWith(VIVO_PREFIX) }
-        val others = packages.filter { it != DaemonProtocol.GOOGLE_APP }.map { packageName ->
-            val label = pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString()
+        val others = packages.filter { it != DaemonProtocol.GOOGLE_APP }.mapNotNull { packageName ->
+            // Пакет могли удалить между запросами: без него и в списке ему делать нечего.
+            val info = try {
+                pm.getApplicationInfo(packageName, 0)
+            } catch (_: PackageManager.NameNotFoundException) {
+                return@mapNotNull null
+            }
+            val label = info.loadLabel(pm).toString()
             val assistActivity = pm.queryIntentActivities(Intent(Intent.ACTION_ASSIST).setPackage(packageName), 0)
                 .firstOrNull { it.activityInfo.exported }?.activityInfo
             val target = if (assistActivity == null || packageName in ROLE_ONLY) packageName
             else "$packageName/${assistActivity.name}"
             Assistant(label, target)
-        }.sortedBy { it.label.lowercase() }
+        }.filter { DaemonProtocol.isValidTarget(it.target) }.sortedBy { it.label.lowercase() }
         return listOfNotNull(GEMINI.takeIf { DaemonProtocol.GOOGLE_APP in packages }) + others
     }
 

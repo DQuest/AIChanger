@@ -1,15 +1,18 @@
 package dev.dquest.aichanger
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -43,9 +46,12 @@ class MainActivity : ComponentActivity(), UiActions {
             handler.postDelayed(this, POLL_MS)
         }
     }
-    // Код сопряжения вводится в уведомлении, без разрешения на них ничего не выйдет.
+    // Код сопряжения вводится в уведомлении, без разрешения на них ничего не выйдет. После второго отказа система
+    // больше не спрашивает и сразу отвечает «нет»: тогда разрешить можно только в настройках.
     private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) startPairing() }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startPairing() else openNotificationSettings()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,8 +67,9 @@ class MainActivity : ComponentActivity(), UiActions {
     override fun onStart() {
         super.onStart()
         PowerKeyController.addListener(onChange)
-        // Ассистентов могли установить или удалить, пока экран был закрыт.
+        // Ассистентов могли установить, удалить или обновить, пока экран был закрыт.
         assistants = loadAssistants()
+        PowerKeyController.reconcileAssistant(assistants.map { it.assistant })
         PowerKeyController.startIfNeeded(applicationContext)
         handler.post(poll)
     }
@@ -84,27 +91,36 @@ class MainActivity : ComponentActivity(), UiActions {
     private fun isInstalled(packageName: String) =
         runCatching { packageManager.getApplicationInfo(packageName, 0) }.isSuccess
 
-    override fun openWifi() {
-        startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-    }
+    override fun openWifi() = openFirst(Intent(Settings.ACTION_WIFI_SETTINGS), Intent(Settings.ACTION_SETTINGS))
 
-    override fun openDeviceInfo() {
-        startActivity(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS))
-    }
+    override fun openDeviceInfo() = openFirst(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS), Intent(Settings.ACTION_SETTINGS))
 
     override fun startPairing() {
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        // Разрешение появилось в Android 13; на 11–12 запрос сразу вернул бы «нет».
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        // Разрешение есть, но уведомления приложения выключены в настройках: уведомление с полем кода не появится.
+        if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+            openNotificationSettings()
             return
         }
         // После сопряжения PairingService сам запустит перехват, если он включён.
         PowerKeyController.setEnabled(true)
         startForegroundService(Intent(this, PairingService::class.java))
-        startActivity(
-            Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-                .putExtra(":settings:fragment_args_key", "toggle_adb_wireless")
+        openFirst(
+            Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).putExtra(":settings:fragment_args_key", "toggle_adb_wireless"),
+            Intent(Settings.ACTION_SETTINGS),
         )
     }
+
+    private fun openNotificationSettings() = openFirst(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+        appDetailsIntent(),
+    )
 
     /** Без разрешения на автозапуск vivo отбрасывает загрузочную рассылку, и демон не стартует после перезагрузки. */
     override fun openAutoStart() = openVivoSettings(VIVO_PERMISSION_MANAGER, VIVO_AUTOSTART_ACTIVITY)
@@ -115,29 +131,34 @@ class MainActivity : ComponentActivity(), UiActions {
      */
     override fun openBackgroundPower() = openVivoSettings(VIVO_POWER_SAVING, VIVO_BACKGROUND_POWER_ACTIVITY)
 
-    private fun openVivoSettings(packageName: String, activity: String) {
-        try {
-            startActivity(Intent().setComponent(ComponentName(packageName, activity)))
-        } catch (_: ActivityNotFoundException) {
-            openAppDetails()
-        } catch (_: SecurityException) {
-            openAppDetails()
-        }
-    }
+    private fun openVivoSettings(packageName: String, activity: String) =
+        openFirst(Intent().setComponent(ComponentName(packageName, activity)), appDetailsIntent())
 
-    private fun openAppDetails() =
-        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+    private fun appDetailsIntent() =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+
+    /** Набор экранов настроек у прошивок разный: если нужного нет или он закрыт, открываем следующий, а не падаем. */
+    private fun openFirst(vararg intents: Intent) {
+        for (intent in intents) {
+            try {
+                startActivity(intent)
+                return
+            } catch (_: ActivityNotFoundException) {
+            } catch (_: SecurityException) {
+            }
+        }
+        Toast.makeText(this, "Не удалось открыть настройки", Toast.LENGTH_SHORT).show()
+    }
 
     override fun finishSetup() {
         PowerKeyController.setSetupDone(true)
         enable()
     }
 
+    override fun completeSetupStep(step: SetupStep) = PowerKeyController.completeSetupStep(step)
+
     /** Заново с сопряжения: оно же нужно, если сменился ключ или сеть. Работающий перехват не останавливаем. */
-    override fun restartSetup() {
-        PowerKeyController.setSetupDone(false)
-        PowerKeyController.setPaired(false)
-    }
+    override fun restartSetup() = PowerKeyController.restartSetup()
 
     override fun enable() {
         PowerKeyController.setEnabled(true)

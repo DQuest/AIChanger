@@ -33,21 +33,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.dquest.aichanger.SetupStep
 
 /**
- * Первая настройка по шагам. Шаги 1 и 2 отмечаются сами (параметры разработчика включены, сопряжение
- * прошло). Настройки vivo на шагах 3 и 4 (автозапуск и работа в фоне) приложению не видны, их подтверждает пользователь.
+ * Первая настройка по шагам. Шаги 2 и 3 отмечаются сами (параметры разработчика включены, сопряжение
+ * прошло). Настройки на шагах 1, 4 и 5 (BlueLM, автозапуск и работа в фоне) приложению не видны,
+ * их подтверждает пользователь.
  */
 @Composable
 fun SetupWizard(state: UiState, actions: UiActions) {
-    var skipDeveloperStep by rememberSaveable { mutableStateOf(false) }
+    // Отметки пользователя хранятся в настройках (PowerKeyController), а не на экране: из настроек телефона
+    // возвращаются и по уведомлению, и мастер должен продолжиться с того же шага. Индикатор ожидания кода — только экранный.
+    val done = state.setupSteps
     var pairingStarted by rememberSaveable { mutableStateOf(false) }
-    var autoStartDone by rememberSaveable { mutableStateOf(false) }
+    // BlueLM первым: сразу после сопряжения перехват уже запускается.
     val step = when {
-        state.paired && autoStartDone -> 4
-        state.paired -> 3
-        state.developerOptions || skipDeveloperStep -> 2
-        else -> 1
+        SetupStep.BLUELM_OFF !in done -> 1
+        state.paired && SetupStep.AUTOSTART in done -> 5
+        state.paired -> 4
+        state.developerOptions || SetupStep.DEVELOPER_OPTIONS in done -> 3
+        else -> 2
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
@@ -72,14 +77,21 @@ fun SetupWizard(state: UiState, actions: UiActions) {
             Spacer(Modifier.height(20.dp))
             when (step) {
                 1 -> Step(
+                    title = "Выключите BlueLM на кнопке питания",
+                    body = "AIChanger не меняет настройки BlueLM. Если BlueLM тоже вызывается удержанием кнопки питания, " +
+                        "откроются оба ассистента. Найдите в настройках телефона BlueLM (蓝心小V) и выключите его вызов " +
+                        "кнопкой питания. Если потом выключите AIChanger, BlueLM можно будет включить там же.",
+                    primary = "Готово, выключил" to { actions.completeSetupStep(SetupStep.BLUELM_OFF) },
+                )
+                2 -> Step(
                     title = "Включите параметры разработчика",
                     body = "Они нужны, чтобы AIChanger мог перехватывать кнопку питания. " +
                         "Откройте «О телефоне» и нажмите 7 раз на номер версии ПО, пока не появится сообщение, " +
                         "что вы стали разработчиком. Потом вернитесь сюда.",
                     primary = "Открыть «О телефоне»" to actions::openDeviceInfo,
-                    secondary = "Уже включены" to { skipDeveloperStep = true },
+                    secondary = "Уже включены" to { actions.completeSetupStep(SetupStep.DEVELOPER_OPTIONS) },
                 )
-                2 -> Step(
+                3 -> Step(
                     title = "Подключите беспроводную отладку",
                     body = null,
                     primary = "Открыть настройки отладки" to {
@@ -94,14 +106,21 @@ fun SetupWizard(state: UiState, actions: UiActions) {
                         "Введите показанный код в уведомлении AIChanger.",
                     )
                     Hint("Нужен Wi-Fi. Код вводится один раз, дальше AIChanger подключается сам.")
-                    if (pairingStarted) Waiting("Ждём код сопряжения из уведомления…")
+                    if (!state.notificationsEnabled) {
+                        Hint(
+                            "Уведомления AIChanger запрещены, а код вводится в уведомлении. " +
+                                "Кнопка ниже попросит их разрешить или откроет настройки уведомлений."
+                        )
+                    } else if (pairingStarted) {
+                        Waiting("Ждём код сопряжения из уведомления…")
+                    }
                 }
-                3 -> Step(
+                4 -> Step(
                     title = "Разрешите автозапуск",
                     body = "Тогда кнопка будет работать и после перезагрузки телефона. " +
                         "Найдите AIChanger в списке и включите переключатель.",
                     primary = "Открыть автозапуск" to actions::openAutoStart,
-                    secondary = "Готово" to { autoStartDone = true },
+                    secondary = "Готово" to { actions.completeSetupStep(SetupStep.AUTOSTART) },
                 )
                 else -> Step(
                     title = "Разрешите работу в фоне",
@@ -196,4 +215,4 @@ private fun Waiting(text: String) {
     }
 }
 
-private const val STEPS = 4
+private const val STEPS = 5
