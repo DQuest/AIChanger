@@ -1,6 +1,7 @@
 name: Сборка APK
 
-# Release-APK (R8, подписан debug-ключом) на каждый push в любую ветку и на pull request; вручную — кнопкой Run workflow во вкладке Actions.
+# Release-APK (R8, подписан debug-ключом) на каждый push в любую ветку и на pull request;
+# вручную — кнопкой Run workflow во вкладке Actions.
 # Тег v<версия> или ручной запуск на main ещё и выпускает релиз с этим APK и описанием из release-notes/v<версия>.md
 # (при ручном запуске тег v<versionName> создаёт сам релиз; если релиз уже есть, обновляется только его описание).
 on:
@@ -55,36 +56,8 @@ jobs:
             echo "Секрета CHANGERKEY нет: APK подписан случайным ключом раннера"
           fi
 
-      - name: Диагностика зависимостей (временно)
-        continue-on-error: true
-        run: |
-          ./gradlew -q :app:dependencies --configuration releaseRuntimeClasspath | grep -i -E "muntashir|bouncy|conscrypt" | sort -u
-          mkdir -p /tmp/deps && cd /tmp/deps
-          for f in $(find ~/.gradle/caches/modules-2/files-2.1 -ipath "*muntashir*" \( -name "*.aar" -o -name "*.jar" \) ! -name "*sources*"); do
-            echo "=== $f"
-            rm -rf x && mkdir x && cd x
-            case "$f" in
-              *.aar) unzip -q "$f"; if [ -f proguard.txt ]; then echo "--- proguard.txt"; cat proguard.txt; fi; jar=classes.jar
-                find . -name "*.so" -path "*arm64*" | while read so; do echo "--- JNI names in $so"; strings "$so" | grep -E "^L?[a-z]+(/[A-Za-z0-9_\$]+){2,};?$" | sort -u; done ;;
-              *) jar="$f" ;;
-            esac
-            unzip -q -o "$jar" -d cls 2>/dev/null || true
-            echo "--- packages"; find cls -name "*.class" -printf "%h\n" | sort -u
-            find cls -name "*.class" | while read c; do
-              hits=$(javap -c -p "$c" 2>/dev/null | grep -B4 -E "Class.forName|getDeclaredMethod|getDeclaredField|getMethod|getField|loadLibrary|ServiceLoader" | grep -E "ldc|forName|getDeclared|getMethod|getField|loadLibrary|ServiceLoader" || true)
-              if [ -n "$hits" ]; then echo "--- $c"; echo "$hits"; fi
-            done
-            cd ..
-          done
-
       - name: Сборка и юнит-тесты
         run: ./gradlew :app:testDebugUnitTest :app:assembleRelease
-
-      - name: Размер APK (временно)
-        continue-on-error: true
-        run: |
-          ls -la app/build/outputs/apk/release/
-          unzip -lv app/build/outputs/apk/release/app-release.apk | sort -k1 -n -r | head -15
 
       - name: Версия для имени артефакта
         id: version

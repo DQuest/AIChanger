@@ -78,9 +78,11 @@ and install it on the phone.
 ### Build it yourself
 
 ```bash
-./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
+
+The release build is signed with your debug key (`~/.android/debug.keystore`), just like a debug build.
 
 > [!NOTE]
 > vivo asks to confirm an adb install on the screen, so keep the phone unlocked.
@@ -187,9 +189,10 @@ flowchart LR
 <details>
 <summary>GitHub builds and signing</summary>
 
-Every push and pull request builds a debug APK and runs the unit tests ([workflow](.github/workflows/build.yml)).
+Every push and pull request builds a release APK and runs the unit tests ([workflow](.github/workflows/build.yml)).
 The APK is under **Actions** → the run → **Artifacts** (`AIChanger-<version>-<run number>`, kept for 30 days).
 
+The release APK is signed with the debug key, so it installs over earlier debug builds without uninstalling.
 Android installs an update only with the same signature. To install APKs from GitHub over builds from your computer
 (and vice versa), add your debug key to the repository secrets: **Settings** → **Secrets and variables** →
 **Actions** → **New repository secret**, name `CHANGERKEY`, value:
@@ -238,6 +241,7 @@ All versions and APKs are on the [Releases](https://github.com/DQuest/AIChanger/
 
 | Version | Highlights |
 |---|---|
+| [3.11](release-notes/v3.11.md#english) | Release build: a 6× smaller APK and a faster UI |
 | [3.10](release-notes/v3.10.md#english) | The app is now in English: the language follows the phone or the Android settings |
 | [3.9](release-notes/v3.9.md#english) | The pairing no longer expires after a week; if it is lost, the app asks to pair again right away |
 | [3.8](release-notes/v3.8.md#english) | First GitHub release: BlueLM is no longer touched, a more reliable service and shutdown, quick fallback on untrusted Wi-Fi |

@@ -35,6 +35,18 @@ android {
         generateLocaleConfig = true
     }
 
+    // Ресурсы Bouncy Castle, которые приложению не нужны (~1,3 МБ): таблицы постквантовой подписи Picnic
+    // и тексты PKIXCertPathReviewer. R8 убирает только классы, java-ресурсы попадают в APK как есть.
+    packaging {
+        resources {
+            excludes += listOf(
+                "org/bouncycastle/pqc/**",
+                "org/bouncycastle/x509/CertPathReviewerMessages*.properties",
+                "org/bouncycastle/pkix/CertPathReviewerMessages*.properties",
+            )
+        }
+    }
+
     buildFeatures {
         buildConfig = true
         compose = true

@@ -7,8 +7,9 @@
     public static void main(java.lang.String[]);
 }
 
-# libadb-android (сопряжение и TLS к adbd) своих правил для R8 не приносит.
--keep class io.github.muntashirakon.** { *; }
+# libspake2.so (сопряжение по коду) находит этот класс и его члены из нативного кода по имени.
+# Остальная рефлексия libadb-android обращается к conscrypt, а его держат правила самой conscrypt.
+-keep class io.github.muntashirakon.crypto.spake2.Spake2Context { *; }
 
 # Адаптеры conscrypt для Android 4.x ссылаются на скрытые классы платформы; на Android 11+ они не используются.
 -dontwarn com.android.org.conscrypt.SSLParametersImpl

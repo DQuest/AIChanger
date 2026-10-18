@@ -7,14 +7,19 @@ AIChanger: удержание кнопки питания на телефона�
 ## Сборка и установка
 
 ```bash
-./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
+
+- Release-сборка (R8 и сжатие ресурсов) подписана debug-ключом, поэтому ставится поверх debug-сборок и наоборот.
+  Для быстрых итераций годится и `assembleDebug`, но перед релизом проверять release: R8 удаляет то, что вызывается
+  только по имени. Правила — в `proguard-rules.pro` (имена не обфусцируются): `main` демона для `app_process`,
+  `Spake2Context` для `libspake2.so`. Лишние java-ресурсы Bouncy Castle исключены в `packaging`.
 
 - vivo требует подтвердить установку по adb на экране: телефон должен быть разблокирован, иначе `INSTALL_FAILED_ABORTED: User rejected permissions`.
 - Юнит-тесты (`./gradlew :app:testDebugUnitTest`) покрывают только чистые функции: проверку имён в протоколе,
   чтение команды демоном, разбор ввода при сопряжении и ответа `status`. Остальное проверяется на устройстве (см. «Отладка»).
-- CI: `.github/workflows/build.yml` гоняет тесты и собирает `assembleDebug` на каждый push и PR, APK — в артефактах запуска.
+- CI: `.github/workflows/build.yml` гоняет тесты и собирает `assembleRelease` на каждый push и PR, APK — в артефактах запуска.
   Релиз: поднять `versionName`, положить описание в `release-notes/v<версия>.md` и запушить тег `v<версия>`
   или запустить workflow вручную на `main` (Run workflow) — он создаст тег и релиз с этим APK. Если релиз этой версии
   уже есть, повторный запуск только обновит его описание из `release-notes/`.
