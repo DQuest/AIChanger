@@ -38,12 +38,12 @@ object PowerKeyDaemon {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        val token = args.getOrNull(0) ?: fail("не передан токен")
+        val token = args.getOrNull(0) ?: fail("no token passed")
         val voice = args.getOrNull(1) != DaemonProtocol.MODE_WINDOW
         // Если порт занят, значит, демон уже работает; второй экземпляр не нужен.
         val server = runCatching {
             ServerSocket(DaemonProtocol.PORT, 4, InetAddress.getByName(DaemonProtocol.HOST))
-        }.getOrElse { fail("порт ${DaemonProtocol.PORT} занят: ${it.message}") }
+        }.getOrElse { fail("port ${DaemonProtocol.PORT} is busy: ${it.message}") }
 
         val engine = PowerKeyEngine(DaemonProtocol.HOLD_MS, DaemonProtocol.POWER_MENU_MS, voice)
         engine.start()

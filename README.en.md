@@ -65,6 +65,8 @@ Apps without one (DeepSeek, for example) are not shown.
 - A vivo phone with **OriginOS 6** (Android 16). Tested on vivo X200 Ultra.
 - **Wi-Fi** where wireless debugging is allowed ("Always allow on this network"): the app uses it to start its service.
 - No root, Shizuku or computer needed.
+- The app speaks English or Russian, following the phone's language. You can also pick it separately in the Android
+  settings, under app languages.
 
 ## Installation
 
@@ -90,7 +92,7 @@ The in-app wizard walks you through these steps; they are listed here for refere
 1. **Turn off BlueLM** on power-button hold in the phone settings. AIChanger does not do it for you; otherwise both
    assistants would open.
 2. **Enable Developer options**: tap the software version 7 times in "About phone".
-3. In AIChanger tap **Enable**. Developer options open, and an AIChanger notification with a code field appears.
+3. In AIChanger tap **Open debugging settings**. Developer options open, and an AIChanger notification with a code field appears.
 4. Turn on **Wireless debugging**, check **Always allow on this network**, choose **Pair device with pairing code**
    and enter the code in the AIChanger notification. If the app asks for a port, enter "port code" separated by
    a space, or paste the whole "IP address & port" line.
@@ -236,6 +238,7 @@ All versions and APKs are on the [Releases](https://github.com/DQuest/AIChanger/
 
 | Version | Highlights |
 |---|---|
+| [3.10](release-notes/v3.10.md#english) | The app is now in English: the language follows the phone or the Android settings |
 | [3.9](release-notes/v3.9.md#english) | The pairing no longer expires after a week; if it is lost, the app asks to pair again right away |
 | [3.8](release-notes/v3.8.md#english) | First GitHub release: BlueLM is no longer touched, a more reliable service and shutdown, quick fallback on untrusted Wi-Fi |
 

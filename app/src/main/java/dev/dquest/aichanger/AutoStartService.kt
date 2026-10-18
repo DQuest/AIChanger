@@ -46,7 +46,7 @@ class AutoStartService : Service() {
         lastStartId = startId
         ensureChannel(this)
         // Уже ждём Wi-Fi или запускаем: уведомление оставляем текущее, иначе «Wi-Fi выключен» сменилось бы на «Запуск…».
-        val shown = current ?: notification(this, STARTING).also { current = it }
+        val shown = current ?: notification(this, getString(R.string.notif_starting)).also { current = it }
         startForeground(NOTIFICATION_ID, shown, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         // Поток уже идёт. Он мог решить, что запускать не нужно (перехват выключали), поэтому после него запустим ещё раз.
         if (working) {
@@ -62,10 +62,8 @@ class AutoStartService : Service() {
         private const val TAG = "AIChanger"
         private const val NOTIFICATION_ID = 2
         private const val CHANNEL_ID = "status"
-        private const val STARTING = "Запуск перехвата кнопки…"
         // Раз в столько перепроверяем, не включили ли Wi-Fi (подключение к сети приходит сразу, по колбэку).
         private const val WIFI_RECHECK_MS = 10_000L
-        const val UNTRUSTED_REASON = "В этой сети беспроводная отладка не разрешена."
 
         private val main = Handler(Looper.getMainLooper())
         // Меняются только в главном потоке.
@@ -87,7 +85,7 @@ class AutoStartService : Service() {
          */
         private fun ensureChannel(context: Context) =
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Запуск перехвата", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.channel_status), NotificationManager.IMPORTANCE_LOW)
             )
 
         private fun startWork(context: Context) {
@@ -115,7 +113,7 @@ class AutoStartService : Service() {
             val error = result.exceptionOrNull()?.takeIf { PowerKeyController.isEnabled }
             val manager = context.getSystemService(NotificationManager::class.java)
             if (error != null) {
-                manager.notify(NOTIFICATION_ID, notification(context, "Не удалось запустить перехват кнопки: ${error.message}"))
+                manager.notify(NOTIFICATION_ID, notification(context, context.getString(R.string.notif_start_failed, describeError(context, error))))
             } else {
                 manager.cancel(NOTIFICATION_ID)
             }
@@ -145,7 +143,10 @@ class AutoStartService : Service() {
                     // Текст меняется, когда Wi-Fi включили, но сеть ещё не подключилась.
                     val enabled = Wifi.isEnabled(context)
                     if (enabled != shownEnabled) {
-                        show(context, wifiNotification(context, if (enabled) "Wi-Fi не подключён" else "Wi-Fi выключен"))
+                        show(context, wifiNotification(
+                            context,
+                            context.getString(if (enabled) R.string.notif_wifi_not_connected else R.string.status_wifi_off_title),
+                        ))
                         shownEnabled = enabled
                     }
                     Wifi.awaitConnected(context, WIFI_RECHECK_MS)
@@ -153,7 +154,7 @@ class AutoStartService : Service() {
             } finally {
                 PowerKeyController.setWaitingForWifi(false)
             }
-            if (PowerKeyController.isEnabled) show(context, notification(context, STARTING))
+            if (PowerKeyController.isEnabled) show(context, notification(context, context.getString(R.string.notif_starting)))
         }
 
         /**
@@ -165,14 +166,21 @@ class AutoStartService : Service() {
             PowerKeyController.setWaitingForWifi(true, untrusted = true)
             retryNow = false
             try {
-                show(context, wifiNotification(context, "Другая сеть Wi-Fi", UNTRUSTED_REASON))
+                show(
+                    context,
+                    wifiNotification(
+                        context,
+                        context.getString(R.string.status_untrusted_wifi_title),
+                        context.getString(R.string.untrusted_reason),
+                    ),
+                )
                 while (PowerKeyController.isEnabled && !retryNow && !DaemonLauncher.isWirelessAdbOn(context)) {
                     if (Wifi.awaitNewNetwork(context, known, WIFI_RECHECK_MS)) break
                 }
             } finally {
                 PowerKeyController.setWaitingForWifi(false)
             }
-            if (PowerKeyController.isEnabled) show(context, notification(context, STARTING))
+            if (PowerKeyController.isEnabled) show(context, notification(context, context.getString(R.string.notif_starting)))
         }
 
         private fun show(context: Context, notification: Notification) {
@@ -187,7 +195,7 @@ class AutoStartService : Service() {
             )
             val text = listOfNotNull(
                 reason,
-                "Перехват кнопки запустится сам, как только телефон подключится к Wi-Fi, в котором настраивали AIChanger.",
+                context.getString(R.string.wifi_wait_text),
             ).joinToString(" ")
             return Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
@@ -195,7 +203,7 @@ class AutoStartService : Service() {
                 .setContentText(text)
                 .setStyle(Notification.BigTextStyle().bigText(text))
                 .setContentIntent(PairingService.openAppIntent(context))
-                .addAction(Notification.Action.Builder(null, "Открыть Wi-Fi", openWifi).build())
+                .addAction(Notification.Action.Builder(null, context.getString(R.string.action_open_wifi), openWifi).build())
                 .setOngoing(true)
                 .build()
         }

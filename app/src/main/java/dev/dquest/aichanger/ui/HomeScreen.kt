@@ -41,14 +41,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.dquest.aichanger.Assistants
-import dev.dquest.aichanger.AutoStartService
 import dev.dquest.aichanger.BuildConfig
 import dev.dquest.aichanger.R
+import dev.dquest.aichanger.describeError
+import dev.dquest.aichanger.describeProblem
+import dev.dquest.aichanger.describeStatus
 import dev.dquest.aichanger.daemon.DaemonProtocol
 
 @Composable
@@ -65,7 +69,7 @@ fun HomeScreen(state: UiState, assistants: List<AssistantItem>, actions: UiActio
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
                 AppIcon(40.dp)
                 Spacer(Modifier.width(12.dp))
-                Text("AIChanger", style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
             }
             StatusCard(state, selected?.assistant?.label, actions)
             AssistantCard(assistants, state.assistant, state.changedSystemAssistant, actions)
@@ -83,6 +87,7 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
     val error = state.error
     val problem = state.problem.takeIf { state.running }
     val stopError = state.stopError
+    val context = LocalContext.current
     val (container, content) = when {
         problem != null || stopError != null -> scheme.errorContainer to scheme.onErrorContainer
         state.running -> status.successContainer to status.onSuccessContainer
@@ -111,21 +116,25 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     val (title, subtitle) = when {
-                        problem != null -> "Не работает" to problem.replaceFirstChar { it.uppercase() }
-                        state.running -> "Работает" to "Удерживайте кнопку питания — откроется ${assistantLabel ?: "ассистент"}"
-                        state.waitingForWifi -> when {
-                            state.untrustedWifi -> "Другая сеть Wi-Fi"
-                            state.wifiEnabled -> "Ждёт Wi-Fi"
-                            else -> "Wi-Fi выключен"
-                        } to (if (state.untrustedWifi) AutoStartService.UNTRUSTED_REASON + " " else "") +
-                            "Перехват запустится сам, как только телефон подключится к Wi-Fi, в котором настраивали AIChanger"
-                        state.launching -> "Запускается…" to "Это займёт несколько секунд"
-                        stopError != null -> "Прежний ассистент не вернулся" to friendlyError(stopError) +
-                            " Ассистентом телефона пока остаётся выбранный в AIChanger; повторим при следующем открытии."
-                        !state.enabled -> "Выключено" to
-                            "Кнопка питания не перехватывается. BlueLM, если нужен, включите в настройках телефона"
-                        error != null -> "Не запустилось" to friendlyError(error)
-                        else -> "Не запущено" to "Запустится через пару секунд"
+                        problem != null -> stringResource(R.string.status_problem_title) to
+                            describeProblem(context, problem).replaceFirstChar { it.uppercase() }
+                        state.running -> stringResource(R.string.status_running_title) to
+                            stringResource(R.string.status_running_text, assistantLabel ?: stringResource(R.string.assistant_generic))
+                        state.waitingForWifi -> stringResource(
+                            when {
+                                state.untrustedWifi -> R.string.status_untrusted_wifi_title
+                                state.wifiEnabled -> R.string.status_waiting_wifi_title
+                                else -> R.string.status_wifi_off_title
+                            }
+                        ) to (if (state.untrustedWifi) stringResource(R.string.untrusted_reason) + " " else "") +
+                            stringResource(R.string.wifi_wait_text)
+                        state.launching -> stringResource(R.string.status_launching_title) to
+                            stringResource(R.string.status_launching_text)
+                        stopError != null -> stringResource(R.string.status_stop_error_title) to
+                            stringResource(R.string.status_stop_error_text, describeError(context, stopError))
+                        !state.enabled -> stringResource(R.string.status_off_title) to stringResource(R.string.status_off_text)
+                        error != null -> stringResource(R.string.status_failed_title) to describeError(context, error)
+                        else -> stringResource(R.string.status_not_started_title) to stringResource(R.string.status_not_started_text)
                     }
                     Text(title, style = MaterialTheme.typography.titleMedium)
                     Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = content.copy(alpha = 0.8f))
@@ -133,12 +142,14 @@ private fun StatusCard(state: UiState, assistantLabel: String?, actions: UiActio
             }
             when {
                 stopError != null -> {
-                    ActionButton("Повторить", actions::disable)
-                    TextButton(onClick = actions::enable, modifier = Modifier.fillMaxWidth()) { Text("Включить снова") }
+                    ActionButton(stringResource(R.string.action_retry), actions::disable)
+                    TextButton(onClick = actions::enable, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.action_enable_again))
+                    }
                 }
-                !state.enabled -> ActionButton("Включить", actions::enable)
-                state.waitingForWifi -> ActionButton("Открыть Wi-Fi", actions::openWifi)
-                !state.running && !state.launching && error != null -> ActionButton("Повторить", actions::enable)
+                !state.enabled -> ActionButton(stringResource(R.string.action_enable), actions::enable)
+                state.waitingForWifi -> ActionButton(stringResource(R.string.action_open_wifi), actions::openWifi)
+                !state.running && !state.launching && error != null -> ActionButton(stringResource(R.string.action_retry), actions::enable)
             }
         }
     }
@@ -155,17 +166,6 @@ private fun ActionButton(text: String, onClick: () -> Unit) {
     FilledTonalButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(text) }
 }
 
-/** Ошибки запуска приходят техническим текстом; пользователю важно, что сделать. */
-private fun friendlyError(error: String): String = when {
-    error.contains("сопряжение") -> "Нужно заново выполнить сопряжение."
-    error.contains("в этой сети") ->
-        "В этой сети Wi-Fi беспроводная отладка не разрешена. Подключитесь к сети, в которой настраивали AIChanger."
-    error.contains("Wi-Fi") -> "Нет Wi-Fi. Подключитесь к сети, в которой настраивали AIChanger."
-    error.contains("беспроводной отладке") ->
-        "Не удалось подключиться к беспроводной отладке. Проверьте, что телефон в той же сети Wi-Fi, что и при настройке."
-    else -> error.replaceFirstChar { it.uppercase() }
-}
-
 @Composable
 private fun AssistantCard(
     assistants: List<AssistantItem>,
@@ -173,10 +173,10 @@ private fun AssistantCard(
     changedSystemAssistant: Boolean,
     actions: UiActions,
 ) {
-    SectionCard("Ассистент") {
+    SectionCard(stringResource(R.string.section_assistant)) {
         if (assistants.isEmpty()) {
             Text(
-                "Не найдено ни одного ассистента. Установите Gemini, Claude, ChatGPT, Perplexity или Алису.",
+                stringResource(R.string.no_assistants),
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
@@ -204,10 +204,10 @@ private fun AssistantCard(
         // лишь когда системным ассистентом был не Google.
         val current = assistants.firstOrNull { it.assistant.target == selected }?.assistant
         if (current != null && !DaemonProtocol.isDirect(current.target) && changedSystemAssistant) {
-            val why = if (current == Assistants.GEMINI) "Gemini вызывается через ассистента телефона, поэтому AIChanger назначил им Google."
-            else "${current.label} работает только как ассистент телефона, поэтому AIChanger назначил его им."
+            val why = if (current == Assistants.GEMINI) stringResource(R.string.role_changed_gemini)
+            else stringResource(R.string.role_changed_other, current.label)
             Text(
-                "$why Прежний вернётся, если выбрать другого или выключить AIChanger.",
+                stringResource(R.string.role_restore_note, why),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp),
@@ -227,9 +227,9 @@ private fun GeminiModeCard(voice: Boolean, actions: UiActions) {
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Сразу слушать", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.gemini_listen_title), style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    if (voice) "Gemini откроется с включённым микрофоном" else "Откроется окно Gemini, микрофон — по кнопке",
+                    stringResource(if (voice) R.string.gemini_listen_on else R.string.gemini_listen_off),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -252,9 +252,9 @@ private fun TipCard() {
             )
             Spacer(Modifier.width(16.dp))
             Column {
-                Text("Меню питания", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.tip_power_menu_title), style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "Держите кнопку дольше, около 2 секунд",
+                    stringResource(R.string.tip_power_menu_text),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -285,18 +285,21 @@ private fun Footer(state: UiState, actions: UiActions) {
     var showDetails by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         if (state.enabled) {
-            TextButton(onClick = actions::disable) { Text("Выключить AIChanger") }
+            TextButton(onClick = actions::disable) { Text(stringResource(R.string.action_turn_off)) }
         }
         Row {
-            TextButton(onClick = actions::restartSetup) { Text("Настроить заново") }
-            TextButton(onClick = { showDetails = !showDetails }) { Text(if (showDetails) "Скрыть сведения" else "Сведения") }
+            TextButton(onClick = actions::restartSetup) { Text(stringResource(R.string.action_setup_again)) }
+            TextButton(onClick = { showDetails = !showDetails }) {
+                Text(stringResource(if (showDetails) R.string.details_hide else R.string.details_show))
+            }
         }
+        val context = LocalContext.current
         AnimatedVisibility(showDetails) {
             Text(
                 buildString {
-                    append("Версия ${BuildConfig.VERSION_NAME}\n")
-                    append(state.details ?: "Демон не запущен")
-                    state.error?.let { append("\nПоследняя ошибка: $it") }
+                    append(stringResource(R.string.details_version, BuildConfig.VERSION_NAME)).append('\n')
+                    append(state.details?.let { describeStatus(context, it) } ?: stringResource(R.string.details_no_daemon))
+                    state.error?.let { append('\n').append(stringResource(R.string.details_last_error, describeError(context, it))) }
                 },
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
