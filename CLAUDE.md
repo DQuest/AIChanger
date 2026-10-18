@@ -15,8 +15,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Юнит-тесты (`./gradlew :app:testDebugUnitTest`) покрывают только чистые функции: проверку имён в протоколе,
   чтение команды демоном, разбор ввода при сопряжении. Остальное проверяется на устройстве (см. «Отладка»).
 - CI: `.github/workflows/build.yml` гоняет тесты и собирает `assembleDebug` на каждый push и PR, APK — в артефактах запуска.
-  Релиз: поднять `versionName`, положить описание в `release-notes/v<версия>.md` и запушить тег `v<версия>` —
-  workflow создаст релиз с этим APK.
+  Релиз: поднять `versionName`, положить описание в `release-notes/v<версия>.md` и запушить тег `v<версия>`
+  или запустить workflow вручную на `main` (Run workflow) — он создаст тег и релиз с этим APK.
   Секрет `CHANGERKEY` — debug-ключ разработчика (keystore в base64), чтобы APK из CI ставился поверх локальной сборки.
 - Сборка только под `arm64-v8a` (нативные библиотеки conscrypt под другие ABI не нужны), minSdk 30, targetSdk 36.
 
