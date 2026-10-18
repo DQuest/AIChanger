@@ -2,7 +2,7 @@ name: Сборка APK
 
 # Debug-APK на каждый push в любую ветку и на pull request; вручную — кнопкой Run workflow во вкладке Actions.
 # Тег v<версия> или ручной запуск на main ещё и выпускает релиз с этим APK и описанием из release-notes/v<версия>.md
-# (при ручном запуске тег v<versionName> создаёт сам релиз).
+# (при ручном запуске тег v<versionName> создаёт сам релиз; если релиз уже есть, обновляется только его описание).
 on:
   push:
     branches: ["**"]
@@ -91,9 +91,15 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; else tag="v$VERSION"; fi
+          notes="release-notes/$tag.md"
+          # Релиз этой версии уже есть: обновляем только описание. APK оставляем тот, что собран из коммита тега.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes-file "$notes"
+            exit 0
+          fi
           apk="AIChanger-$tag.apk"
           mv app-debug.apk "$apk"
           # --target нужен при ручном запуске: тега ещё нет, релиз создаёт его на собранном коммите.
           gh release create "$tag" "$apk" --target "$GITHUB_SHA" \
             --title "AIChanger ${tag#v}" \
-            --notes-file "release-notes/$tag.md"
+            --notes-file "$notes"
