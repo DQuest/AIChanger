@@ -9,3 +9,7 @@
 
 # libadb-android (сопряжение и TLS к adbd) своих правил для R8 не приносит.
 -keep class io.github.muntashirakon.** { *; }
+
+# Адаптеры conscrypt для Android 4.x ссылаются на скрытые классы платформы; на Android 11+ они не используются.
+-dontwarn com.android.org.conscrypt.SSLParametersImpl
+-dontwarn org.apache.harmony.xnet.provider.jsse.SSLParametersImpl

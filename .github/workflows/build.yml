@@ -64,13 +64,15 @@ jobs:
             echo "=== $f"
             rm -rf x && mkdir x && cd x
             case "$f" in
-              *.aar) unzip -q "$f"; [ -f proguard.txt ] && { echo "--- proguard.txt"; cat proguard.txt; }; jar=classes.jar ;;
+              *.aar) unzip -q "$f"; if [ -f proguard.txt ]; then echo "--- proguard.txt"; cat proguard.txt; fi; jar=classes.jar
+                find . -name "*.so" -path "*arm64*" | while read so; do echo "--- JNI names in $so"; strings "$so" | grep -E "^L?[a-z]+(/[A-Za-z0-9_\$]+){2,};?$" | sort -u; done ;;
               *) jar="$f" ;;
             esac
             unzip -q -o "$jar" -d cls 2>/dev/null || true
+            echo "--- packages"; find cls -name "*.class" -printf "%h\n" | sort -u
             find cls -name "*.class" | while read c; do
-              hits=$(javap -c -p "$c" 2>/dev/null | grep -E "Class.forName|getDeclaredMethod|getDeclaredField|getMethod|getField|loadLibrary|ServiceLoader" | sort -u)
-              [ -n "$hits" ] && { echo "--- $c"; echo "$hits"; }
+              hits=$(javap -c -p "$c" 2>/dev/null | grep -B4 -E "Class.forName|getDeclaredMethod|getDeclaredField|getMethod|getField|loadLibrary|ServiceLoader" | grep -E "ldc|forName|getDeclared|getMethod|getField|loadLibrary|ServiceLoader" || true)
+              if [ -n "$hits" ]; then echo "--- $c"; echo "$hits"; fi
             done
             cd ..
           done
