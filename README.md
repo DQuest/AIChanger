@@ -79,9 +79,11 @@
 ### Сборка самостоятельно
 
 ```bash
-./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
+
+Release-сборка подписывается вашим debug-ключом (`~/.android/debug.keystore`), как и debug-сборка.
 
 > [!NOTE]
 > vivo просит подтвердить установку по adb на экране, поэтому телефон должен быть разблокирован.
@@ -189,9 +191,10 @@ flowchart LR
 <details>
 <summary>Сборка на GitHub и подпись</summary>
 
-Каждый push и pull request собирает debug-APK и гоняет юнит-тесты ([workflow](.github/workflows/build.yml)).
+Каждый push и pull request собирает release-APK и гоняет юнит-тесты ([workflow](.github/workflows/build.yml)).
 APK лежит во вкладке **Actions** → нужный запуск → **Artifacts** (`AIChanger-<версия>-<номер запуска>`, 30 дней).
 
+Release-APK подписывается debug-ключом: так он ставится поверх прежних debug-сборок без удаления приложения.
 Android ставит обновление только с той же подписью. Чтобы APK из GitHub ставился поверх собранного на компьютере
 (и наоборот), добавьте свой debug-ключ в секреты репозитория: **Settings** → **Secrets and variables** →
 **Actions** → **New repository secret**, имя `CHANGERKEY`, значение:
@@ -240,6 +243,7 @@ adb logcat -s AIChanger                               # логи приложе�
 
 | Версия | Главное |
 |---|---|
+| [3.11](release-notes/v3.11.md) | Release-сборка: APK в 6 раз меньше, интерфейс быстрее |
 | [3.10](release-notes/v3.10.md) | Приложение на английском: язык выбирается по языку телефона или в настройках Android |
 | [3.9](release-notes/v3.9.md) | Сопряжение больше не истекает через неделю; если оно потеряно, приложение сразу просит выполнить его заново |
 | [3.8](release-notes/v3.8.md) | Первый релиз на GitHub: BlueLM больше не трогается, надёжнее служба и выключение, быстрый отказ в чужой сети Wi-Fi |
