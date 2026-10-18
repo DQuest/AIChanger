@@ -11,6 +11,7 @@
 ![OriginOS 6](https://img.shields.io/badge/OriginOS-6-415FFF)
 ![No root](https://img.shields.io/badge/root-not%20required-success)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)
+[![License: GPL v3](https://img.shields.io/badge/license-GPL%20v3-blue)](LICENSE)
 
 [Русский](README.md) · **English**
 
@@ -37,6 +38,7 @@ no root, no Shizuku, no computer.
 - [How it works](#how-it-works)
 - [For developers](#for-developers)
 - [Changelog](#changelog)
+- [License](#license)
 
 ## Features
 
@@ -230,3 +232,8 @@ All versions and APKs are on the [Releases](https://github.com/DQuest/AIChanger/
 | Version | Highlights |
 |---|---|
 | [3.8](release-notes/v3.8.md#english) | First GitHub release: BlueLM is no longer touched, a more reliable service and shutdown, quick fallback on untrusted Wi-Fi |
+
+## License
+
+AIChanger is licensed under the [GNU GPL v3.0](LICENSE). You are free to use, study, modify and share the code,
+but modified versions you distribute must also be open source under the same license.

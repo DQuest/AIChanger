@@ -11,6 +11,7 @@
 ![OriginOS 6](https://img.shields.io/badge/OriginOS-6-415FFF)
 ![root не нужен](https://img.shields.io/badge/root-%D0%BD%D0%B5%20%D0%BD%D1%83%D0%B6%D0%B5%D0%BD-success)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)
+[![Лицензия: GPL v3](https://img.shields.io/badge/%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-GPL%20v3-blue)](LICENSE)
 
 **Русский** · [English](README.en.md)
 
@@ -37,6 +38,7 @@
 - [Как это устроено](#как-это-устроено)
 - [Для разработчиков](#для-разработчиков)
 - [История изменений](#история-изменений)
+- [Лицензия](#лицензия)
 
 ## Возможности
 
@@ -232,3 +234,9 @@ adb logcat -s AIChanger                               # логи приложе�
 | Версия | Главное |
 |---|---|
 | [3.8](release-notes/v3.8.md) | Первый релиз на GitHub: BlueLM больше не трогается, надёжнее служба и выключение, быстрый отказ в чужой сети Wi-Fi |
+
+## Лицензия
+
+AIChanger распространяется под лицензией [GNU GPL v3.0](LICENSE). Код можно свободно использовать, изучать,
+менять и распространять, но изменённые версии, которые вы распространяете, тоже должны быть открытыми под той же
+лицензией.
