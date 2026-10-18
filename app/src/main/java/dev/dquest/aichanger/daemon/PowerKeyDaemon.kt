@@ -27,6 +27,8 @@ object PowerKeyDaemon {
 
     private const val TAG = "AIChanger"
     private const val UNINSTALL_CHECK_MS = 10_000L
+    // Столько проверок подряд пакета нет: одна неудачная (pm занят, например, пока перезапускается system_server) не в счёт.
+    private const val UNINSTALL_CONFIRMATIONS = 3
     private const val CLIENT_TIMEOUT_MS = 3000
     private const val MAX_CLIENTS = 4
     private const val MAX_QUEUED = 8
@@ -129,7 +131,7 @@ object PowerKeyDaemon {
     }
 
     /** Строка команды, разбитая по пробелам; null, если она длиннее [MAX_LINE]: такое шлёт не наше приложение. */
-    private fun readCommand(input: InputStream): List<String>? {
+    internal fun readCommand(input: InputStream): List<String>? {
         val line = ByteArrayOutputStream()
         while (true) {
             val byte = input.read()
@@ -147,10 +149,13 @@ object PowerKeyDaemon {
      */
     private fun watchForUninstall(engine: PowerKeyEngine) {
         val apk = File(System.getProperty("java.class.path").orEmpty().substringBefore(':'))
+        var missing = 0
         while (true) {
             Thread.sleep(UNINSTALL_CHECK_MS)
-            // Если pm не запустился, считаем, что приложение на месте: проверим снова через 10 с.
-            if (apk.exists() || runCatching { isPackageInstalled() }.getOrDefault(true)) continue
+            // Ложное «удалено» выключило бы перехват, поэтому сбой самого pm удалением не считаем.
+            val installed = apk.exists() || runCatching { isPackageInstalled() }.getOrNull() != false
+            missing = if (installed) 0 else missing + 1
+            if (missing < UNINSTALL_CONFIRMATIONS) continue
             restoreSystem(engine)
             Log.i(TAG, "app uninstalled, daemon exits")
             exitProcess(0)
@@ -163,11 +168,20 @@ object PowerKeyDaemon {
         engine.restoreAssistantRole()
     }
 
-    private fun isPackageInstalled(): Boolean {
+    /**
+     * true — установлен, false — нет, null — pm не ответил по делу. Для удалённого пакета `pm path` ничего
+     * не выводит; любой другой вывод без `package:` (например, «Can't find service: package», пока
+     * перезапускается system_server) — это сбой, а не ответ.
+     */
+    private fun isPackageInstalled(): Boolean? {
         val process = ProcessBuilder("pm", "path", BuildConfig.APPLICATION_ID).redirectErrorStream(true).start()
         val output = process.inputStream.bufferedReader().readText()
         process.waitFor()
-        return output.contains("package:")
+        return when {
+            output.contains("package:") -> true
+            output.isBlank() -> false
+            else -> null
+        }
     }
 
     private fun fail(message: String): Nothing {

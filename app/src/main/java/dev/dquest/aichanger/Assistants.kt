@@ -2,6 +2,7 @@ package dev.dquest.aichanger
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.service.voice.VoiceInteractionService
 import dev.dquest.aichanger.daemon.DaemonProtocol
 
@@ -29,8 +30,14 @@ object Assistants {
             .map { it.serviceInfo.packageName }
             .distinct()
             .filter { it != context.packageName && !it.startsWith(VIVO_PREFIX) }
-        val others = packages.filter { it != DaemonProtocol.GOOGLE_APP }.map { packageName ->
-            val label = pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString()
+        val others = packages.filter { it != DaemonProtocol.GOOGLE_APP }.mapNotNull { packageName ->
+            // Пакет могли удалить между запросами: без него и в списке ему делать нечего.
+            val info = try {
+                pm.getApplicationInfo(packageName, 0)
+            } catch (_: PackageManager.NameNotFoundException) {
+                return@mapNotNull null
+            }
+            val label = info.loadLabel(pm).toString()
             val assistActivity = pm.queryIntentActivities(Intent(Intent.ACTION_ASSIST).setPackage(packageName), 0)
                 .firstOrNull { it.activityInfo.exported }?.activityInfo
             val target = if (assistActivity == null || packageName in ROLE_ONLY) packageName

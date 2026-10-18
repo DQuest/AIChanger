@@ -22,10 +22,14 @@ data class UiState(
     val running: Boolean,
     val launching: Boolean,
     val waitingForWifi: Boolean,
+    /** Ждём другую сеть Wi-Fi: в этой беспроводная отладка не разрешена. */
+    val untrustedWifi: Boolean,
     val wifiEnabled: Boolean,
     /** Код сопряжения вводится в уведомлении. */
     val notificationsEnabled: Boolean,
     val error: String?,
+    /** Перехват выключен, но прежнего системного ассистента вернуть не удалось. */
+    val stopError: String?,
     /** Демон работает, но кнопку не перехватывает. */
     val problem: String?,
     val assistant: String,
@@ -38,7 +42,8 @@ data class UiState(
             val version = PowerKeyController.daemonVersion
             return UiState(
                 enabled = PowerKeyController.isEnabled,
-                paired = PowerKeyController.isPaired,
+                // Пока настраивают заново, мастер начинается с сопряжения, хотя прежнее ещё действует.
+                paired = PowerKeyController.isPaired && !PowerKeyController.isRepairing,
                 setupDone = PowerKeyController.isSetupDone,
                 setupSteps = PowerKeyController.completedSetupSteps,
                 developerOptions = Settings.Global.getInt(
@@ -48,9 +53,11 @@ data class UiState(
                 // Демон прежней версии сейчас заменят новым: для пользователя это тот же запуск.
                 launching = PowerKeyController.launching || (version != null && version != BuildConfig.VERSION_CODE),
                 waitingForWifi = PowerKeyController.waitingForWifi,
+                untrustedWifi = PowerKeyController.untrustedWifi,
                 wifiEnabled = Wifi.isEnabled(context),
                 notificationsEnabled = context.getSystemService(NotificationManager::class.java).areNotificationsEnabled(),
                 error = PowerKeyController.lastLaunchError,
+                stopError = PowerKeyController.lastStopError.takeIf { !PowerKeyController.isEnabled },
                 problem = PowerKeyController.daemonProblem,
                 assistant = PowerKeyController.assistant,
                 changedSystemAssistant = PowerKeyController.changedSystemAssistant,

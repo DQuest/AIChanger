@@ -67,8 +67,9 @@ class MainActivity : ComponentActivity(), UiActions {
     override fun onStart() {
         super.onStart()
         PowerKeyController.addListener(onChange)
-        // Ассистентов могли установить или удалить, пока экран был закрыт.
+        // Ассистентов могли установить, удалить или обновить, пока экран был закрыт.
         assistants = loadAssistants()
+        PowerKeyController.reconcileAssistant(assistants.map { it.assistant })
         PowerKeyController.startIfNeeded(applicationContext)
         handler.post(poll)
     }
