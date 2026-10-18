@@ -241,7 +241,7 @@ All versions and APKs are on the [Releases](https://github.com/DQuest/AIChanger/
 
 | Version | Highlights |
 |---|---|
-| [3.11](release-notes/v3.11.md#english) | Release build: a 6× smaller APK and a faster UI |
+| [3.11](release-notes/v3.11.md#english) | Release build: an 8× smaller APK and a faster UI |
 | [3.10](release-notes/v3.10.md#english) | The app is now in English: the language follows the phone or the Android settings |
 | [3.9](release-notes/v3.9.md#english) | The pairing no longer expires after a week; if it is lost, the app asks to pair again right away |
 | [3.8](release-notes/v3.8.md#english) | First GitHub release: BlueLM is no longer touched, a more reliable service and shutdown, quick fallback on untrusted Wi-Fi |
