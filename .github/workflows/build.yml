@@ -1,6 +1,7 @@
 name: Сборка APK
 
-# Debug-APK на каждый push в любую ветку и на pull request; вручную — кнопкой Run workflow во вкладке Actions.
+# Release-APK (R8, подписан debug-ключом) на каждый push в любую ветку и на pull request;
+# вручную — кнопкой Run workflow во вкладке Actions.
 # Тег v<версия> или ручной запуск на main ещё и выпускает релиз с этим APK и описанием из release-notes/v<версия>.md
 # (при ручном запуске тег v<versionName> создаёт сам релиз; если релиз уже есть, обновляется только его описание).
 on:
@@ -39,7 +40,7 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
 
-      # Debug-сборки подписываются ключом ~/.android/debug.keystore, а на раннере он каждый раз новый.
+      # Debug- и release-сборки подписываются ключом ~/.android/debug.keystore, а на раннере он каждый раз новый.
       # APK с другой подписью Android не поставит поверх уже установленного (придётся удалять приложение
       # вместе с сопряжением). Если в секретах репозитория есть CHANGERKEY (keystore в base64) — тот же ключ,
       # что на компьютере разработчика, — CI-сборки ставятся поверх локальных и наоборот.
@@ -56,7 +57,7 @@ jobs:
           fi
 
       - name: Сборка и юнит-тесты
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease
 
       - name: Версия для имени артефакта
         id: version
@@ -65,7 +66,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: AIChanger-${{ steps.version.outputs.name }}-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -98,7 +99,7 @@ jobs:
             exit 0
           fi
           apk="AIChanger-$tag.apk"
-          mv app-debug.apk "$apk"
+          mv app-release.apk "$apk"
           # --target нужен при ручном запуске: тега ещё нет, релиз создаёт его на собранном коммите.
           gh release create "$tag" "$apk" --target "$GITHUB_SHA" \
             --title "AIChanger ${tag#v}" \

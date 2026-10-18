@@ -265,7 +265,11 @@ private fun TipCard() {
 
 @Composable
 private fun SectionCard(title: String?, content: @Composable () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
+    // Card по ширине подстраивается под содержимое: без fillMaxWidth короткая подсказка давала узкую карточку.
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+    ) {
         Column(Modifier.padding(vertical = 12.dp)) {
             if (title != null) {
                 Text(
