@@ -157,12 +157,12 @@ private fun ActionButton(text: String, onClick: () -> Unit) {
 
 /** Ошибки запуска приходят техническим текстом; пользователю важно, что сделать. */
 private fun friendlyError(error: String): String = when {
+    error.contains("сопряжение") -> "Нужно заново выполнить сопряжение."
     error.contains("в этой сети") ->
         "В этой сети Wi-Fi беспроводная отладка не разрешена. Подключитесь к сети, в которой настраивали AIChanger."
     error.contains("Wi-Fi") -> "Нет Wi-Fi. Подключитесь к сети, в которой настраивали AIChanger."
     error.contains("беспроводной отладке") ->
         "Не удалось подключиться к беспроводной отладке. Проверьте, что телефон в той же сети Wi-Fi, что и при настройке."
-    error.contains("сопряжение") -> "Нужно заново выполнить сопряжение."
     else -> error.replaceFirstChar { it.uppercase() }
 }
 

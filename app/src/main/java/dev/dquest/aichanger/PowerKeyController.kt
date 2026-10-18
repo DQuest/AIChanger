@@ -29,6 +29,7 @@ object PowerKeyController {
     private const val KEY_RESTORE_ROLE = "restore_role"
     private const val KEY_SETUP_DONE = "setup_done"
     private const val KEY_SETUP_STEPS = "setup_steps"
+    private const val KEY_PAIRING_LOST = "pairing_lost"
 
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
     // Отдельный лок, а не @Synchronized: тот держит ensureRunning на всё время запуска, а выбор ассистента ждать его не должен.
@@ -144,10 +145,15 @@ object PowerKeyController {
         .also { prefs.edit().putString(KEY_TOKEN, it).commit() }
 
     fun setPaired(value: Boolean) {
-        prefs.edit().putBoolean(KEY_PAIRED, value).apply()
+        val editor = prefs.edit().putBoolean(KEY_PAIRED, value)
+        if (value) editor.remove(KEY_PAIRING_LOST)
+        editor.apply()
         if (value) isRepairing = false
         notifyListeners()
     }
+
+    /** Прежнее сопряжение перестало действовать ([PairingLostException]): мастер объясняет, почему просит его снова. */
+    val isPairingLost: Boolean get() = prefs.getBoolean(KEY_PAIRING_LOST, false)
 
     fun setEnabled(value: Boolean) {
         prefs.edit().putBoolean(KEY_ENABLED, value).apply()
@@ -217,6 +223,9 @@ object PowerKeyController {
         try {
             if (DaemonClient.ping(token) == BuildConfig.VERSION_CODE) {
                 DaemonClient.setVoiceMode(token, isVoiceMode)
+                // Демон уже работает (например, запущен версией, которая тайм-аут не трогала), а сопряжение
+                // понадобится при следующем запуске: не даём ему истечь и здесь.
+                DaemonLauncher.disableAuthorizationTimeout(context)
             } else {
                 check(isPaired) { "сначала выполните сопряжение с беспроводной отладкой" }
                 DaemonLauncher.launch(context, isVoiceMode, ::newToken)
@@ -224,6 +233,13 @@ object PowerKeyController {
             // Демон после запуска вызывает Gemini, а выбранного ассистента узнаёт только отсюда.
             applyAssistant()
             lastLaunchError = null
+        } catch (e: PairingLostException) {
+            lastLaunchError = e.message
+            // Ключ adbd больше не узнаёт: без нового сопряжения запуск не пройдёт. Сбрасываем его, и экран сам
+            // откроет мастер на шаге сопряжения, а автозапуск не будет зря включать отладку.
+            prefs.edit().putBoolean(KEY_PAIRED, false).putBoolean(KEY_PAIRING_LOST, true).apply()
+            notifyListeners()
+            throw e
         } catch (e: Exception) {
             lastLaunchError = e.message
             throw e
