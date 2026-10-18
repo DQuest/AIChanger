@@ -79,7 +79,7 @@ class AdbManager private constructor(context: Context) : AbsAdbConnectionManager
             it.write(bytes)
             it.fd.sync()
         }
-        if (!temp.renameTo(this)) throw IOException("не удалось сохранить $name")
+        if (!temp.renameTo(this)) throw IOException("couldn't save $name")
     }
 
     override fun getPrivateKey() = privateKey

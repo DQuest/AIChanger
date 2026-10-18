@@ -39,7 +39,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
 
     @Volatile private var active = false
     @Volatile private var devices: List<String> = emptyList()
-    // Почему кнопка питания не перехватывается; null — всё в порядке.
+    // Код (DaemonProtocol.PROBLEM_*), почему кнопка питания не перехватывается; null — всё в порядке.
     @Volatile private var lastError: String? = null
     // Последняя ошибка прямого запуска ассистента (`am start`); только для сведений, кнопку она не ломает.
     @Volatile private var launchError: String? = null
@@ -67,18 +67,20 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         }
     }
 
-    /** Почему кнопка питания не перехватывается (для экрана приложения); null — всё в порядке. */
+    /** Код ([DaemonProtocol.PROBLEM]), почему кнопка питания не перехватывается; null — всё в порядке. */
     fun problem(): String? = lastError
 
-    fun status(): String = buildString {
-        append("Устройства: ${devices.joinToString().ifEmpty { "—" }}\n")
-        append("Порог удержания: $holdMs мс, меню питания: $powerMenuMs мс\n")
-        append("Ассистент: $assistant\n")
-        if (isGemini(assistant)) append("Режим: ${if (voiceMode) "голосовой ввод" else "окно без прослушивания"}\n")
-        append("Вызовов ассистента: $fired")
-        lastError?.let { append("\nОшибка: $it") }
-        launchError?.let { append("\nОшибка запуска ассистента: $it") }
-    }
+    /** Строки `ключ=значение` ([DaemonProtocol.STATUS]); перевод строки внутри значения разорвал бы формат. */
+    fun status(): String = buildList {
+        add(DaemonProtocol.STATUS_DEVICES to devices.joinToString())
+        add(DaemonProtocol.STATUS_HOLD_MS to holdMs.toString())
+        add(DaemonProtocol.STATUS_MENU_MS to powerMenuMs.toString())
+        add(DaemonProtocol.STATUS_ASSISTANT to assistant)
+        if (isGemini(assistant)) add(DaemonProtocol.STATUS_VOICE to if (voiceMode) "1" else "0")
+        add(DaemonProtocol.STATUS_FIRED to fired.toString())
+        lastError?.let { add(DaemonProtocol.STATUS_PROBLEM to it) }
+        launchError?.let { add(DaemonProtocol.STATUS_LAUNCH_ERROR to it) }
+    }.joinToString("\n") { (key, value) -> "$key=${value.replace('\n', ' ')}" }
 
     /**
      * Прямому запуску роль системного ассистента не нужна, и если мы её меняли, возвращаем прежнего.
@@ -128,7 +130,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
             val withPower = all.filter { KEY_POWER_LABEL in it.keys }
             val power = withPower.filter { it.name in POWER_DEVICE_NAMES }.ifEmpty { withPower.filter { !it.virtual } }
             if (power.isEmpty()) {
-                lastError = "кнопка питания не найдена среди устройств ввода"
+                lastError = DaemonProtocol.PROBLEM_NO_POWER_KEY
                 Thread.sleep(RESTART_DELAY_MS)
                 continue
             }
@@ -159,7 +161,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
                     }
                 }
             } catch (e: Exception) {
-                if (power) lastError = "не читается кнопка питания ($path): ${e.message}"
+                if (power) lastError = "${DaemonProtocol.PROBLEM_UNREADABLE} $path ${e.message}"
                 Log.w(TAG, "daemon: reading $path failed: $e")
             }
             // Пропущенное отпускание громкости не должно навсегда считаться зажатой клавишей.

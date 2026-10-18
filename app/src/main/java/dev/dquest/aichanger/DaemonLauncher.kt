@@ -24,8 +24,17 @@ import java.util.concurrent.Executors
  * adbd не узнаёт ключ AIChanger: сопряжение больше не действует (например, истекло, см.
  * [DaemonLauncher.disableAuthorizationTimeout]). Повторять бессмысленно, нужно новое сопряжение.
  */
-class PairingLostException(cause: Throwable) :
-    IllegalStateException("сопряжение с беспроводной отладкой больше не действует, выполните его заново", cause)
+class PairingLostException(cause: Throwable) : IllegalStateException("wireless debugging pairing is no longer valid", cause)
+
+/** Беспроводная отладка выключена, а включить её самому приложению нельзя: ещё нет WRITE_SECURE_SETTINGS. */
+class WirelessDebuggingOffException : IllegalStateException("wireless debugging is off and the app can't turn it on")
+
+/** Не удалось подключиться к беспроводной отладке ни с одной попытки; [cause] — последняя ошибка. */
+class AdbConnectException(cause: Throwable?) :
+    IllegalStateException("couldn't connect to wireless debugging: ${cause?.message}", cause)
+
+/** Демон запущен, но так и не ответил на ping. */
+class DaemonNoAnswerException : IllegalStateException("the daemon didn't answer after launch")
 
 /**
  * Запускает [PowerKeyDaemon] с uid shell через собственный adb приложения: включает беспроводную
@@ -81,7 +90,7 @@ object DaemonLauncher {
     fun isWirelessAdbOn(context: Context) = Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0) == 1
 
     /** Система выключила беспроводную отладку, пока мы искали порт: ждать порт дальше бессмысленно. */
-    private class WirelessAdbOffException : IOException("система выключила беспроводную отладку")
+    private class WirelessAdbOffException : IOException("the system turned wireless debugging off")
 
     /**
      * Выполняется в фоновом потоке, бросает исключение с понятным текстом при ошибке.
@@ -98,7 +107,7 @@ object DaemonLauncher {
             token = newToken()
             Log.i(TAG, "daemon launch: ${shell(adb, launchCommand(context, token, voice))}")
         }
-        check(waitForDaemon(token)) { "демон не ответил после запуска" }
+        if (!waitForDaemon(token)) throw DaemonNoAnswerException()
     }
 
     /**
@@ -126,9 +135,7 @@ object DaemonLauncher {
         val devWasEnabled = Settings.Global.getInt(resolver, DEVELOPMENT_SETTINGS_ENABLED, 0) == 1 &&
             !marks.getBoolean(DEVELOPMENT_SETTINGS_ENABLED, false)
         if (!wasEnabled) {
-            check(canWriteSecureSettings(context)) {
-                "включите «Беспроводная отладка» в настройках для разработчиков и повторите"
-            }
+            if (!canWriteSecureSettings(context)) throw WirelessDebuggingOffException()
             marks.edit().putBoolean(ADB_WIFI_ENABLED, true).putBoolean(DEVELOPMENT_SETTINGS_ENABLED, !devWasEnabled).commit()
             if (!devWasEnabled) Settings.Global.putInt(resolver, DEVELOPMENT_SETTINGS_ENABLED, 1)
             // Не включится в сети, для которой не разрешено «Всегда разрешать в этой сети».
@@ -194,7 +201,7 @@ object DaemonLauncher {
             }
             Thread.sleep(POLL_MS * 4)
         }
-        throw IllegalStateException("не удалось подключиться к беспроводной отладке: ${lastError?.message}", lastError)
+        throw AdbConnectException(lastError)
     }
 
     /**

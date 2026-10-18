@@ -13,8 +13,20 @@ object DaemonProtocol {
     const val POWER_MENU_MS = 2000
 
     const val PING = "ping" // ответ: versionCode демона
-    const val STATUS = "status"
-    const val PROBLEM = "problem" // ответ: почему кнопка питания не перехватывается; пусто — всё в порядке
+    const val STATUS = "status" // ответ: строки `ключ=значение` (STATUS_*), текст на языке телефона собирает приложение
+    const val PROBLEM = "problem" // ответ: код PROBLEM_*, почему кнопка питания не перехватывается; пусто — всё в порядке
+
+    // У демона нет ресурсов приложения, поэтому он отдаёт данные и коды, а не готовый текст.
+    const val STATUS_DEVICES = "devices"
+    const val STATUS_HOLD_MS = "hold_ms"
+    const val STATUS_MENU_MS = "menu_ms"
+    const val STATUS_ASSISTANT = "assistant"
+    const val STATUS_VOICE = "voice" // только для Gemini: 1 — голосовой ввод, 0 — окно
+    const val STATUS_FIRED = "fired"
+    const val STATUS_PROBLEM = "problem" // код PROBLEM_*
+    const val STATUS_LAUNCH_ERROR = "launch_error" // вывод am start, как есть
+    const val PROBLEM_NO_POWER_KEY = "no_power_key"
+    const val PROBLEM_UNREADABLE = "unreadable" // `unreadable <путь> <сообщение>`
     const val MODE = "mode" // аргумент: MODE_VOICE или MODE_WINDOW
     const val STOP = "stop" // вернуть прежнего системного ассистента, завершиться
     /**

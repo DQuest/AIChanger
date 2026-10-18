@@ -29,14 +29,16 @@ data class UiState(
     val wifiEnabled: Boolean,
     /** Код сопряжения вводится в уведомлении. */
     val notificationsEnabled: Boolean,
-    val error: String?,
+    /** Последний неудачный запуск; текст для экрана — [dev.dquest.aichanger.describeError]. */
+    val error: Throwable?,
     /** Перехват выключен, но прежнего системного ассистента вернуть не удалось. */
-    val stopError: String?,
-    /** Демон работает, но кнопку не перехватывает. */
+    val stopError: Throwable?,
+    /** Демон работает, но кнопку не перехватывает: код, текст — [dev.dquest.aichanger.describeProblem]. */
     val problem: String?,
     val assistant: String,
     val changedSystemAssistant: Boolean,
     val voice: Boolean,
+    /** Ответ демона на status как есть; текст — [dev.dquest.aichanger.describeStatus]. */
     val details: String?,
 ) {
     companion object {
