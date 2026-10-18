@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.util.Log
 import dev.dquest.aichanger.daemon.DaemonProtocol
 import dev.dquest.aichanger.daemon.PowerKeyDaemon
+import io.github.muntashirakon.adb.AdbPairingRequiredException
 import java.io.IOException
 import java.io.DataInputStream
 import java.net.InetSocketAddress
@@ -18,6 +19,13 @@ import java.nio.channels.Selector
 import java.nio.channels.SocketChannel
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
+
+/**
+ * adbd не узнаёт ключ AIChanger: сопряжение больше не действует (например, истекло, см.
+ * [DaemonLauncher.disableAuthorizationTimeout]). Повторять бессмысленно, нужно новое сопряжение.
+ */
+class PairingLostException(cause: Throwable) :
+    IllegalStateException("сопряжение с беспроводной отладкой больше не действует, выполните его заново", cause)
 
 /**
  * Запускает [PowerKeyDaemon] с uid shell через собственный adb приложения: включает беспроводную
@@ -32,6 +40,7 @@ object DaemonLauncher {
     private const val MARKS = "launcher_marks"
     private const val WIFI_WAIT_MS = 30_000L
     private const val CONNECT_ATTEMPTS = 5
+    private const val ADB_ALLOWED_CONNECTION_TIME = "adb_allowed_connection_time"
     // Столько раз система выключила отладку сразу после включения: значит, сеть не доверенная.
     private const val UNTRUSTED_AFTER = 2
     private const val CONNECT_TIMEOUT_MS = 15_000L
@@ -56,6 +65,19 @@ object DaemonLauncher {
     fun canWriteSecureSettings(context: Context) =
         context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
 
+    /**
+     * Android забывает ключи отладки, которыми не пользовались 7 дней (пока выключена настройка «Отключить тайм-аут
+     * авторизации adb»), и сопряжение по Wi-Fi тоже. AIChanger подключается к adb только при запуске демона, а телефон
+     * может работать без перезагрузки дольше недели: тогда следующий запуск (например, после обновления) упрётся
+     * в «нужно сопряжение». 0 — та же настройка в параметрах разработчика: ключи не истекают никогда.
+     */
+    fun disableAuthorizationTimeout(context: Context) {
+        val resolver = context.contentResolver
+        if (Settings.Global.getLong(resolver, ADB_ALLOWED_CONNECTION_TIME, -1) == 0L || !canWriteSecureSettings(context)) return
+        Settings.Global.putLong(resolver, ADB_ALLOWED_CONNECTION_TIME, 0)
+        Log.i(TAG, "adb authorization timeout disabled")
+    }
+
     fun isWirelessAdbOn(context: Context) = Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0) == 1
 
     /** Система выключила беспроводную отладку, пока мы искали порт: ждать порт дальше бессмысленно. */
@@ -72,6 +94,7 @@ object DaemonLauncher {
             if (!canWriteSecureSettings(context)) {
                 shell(adb, "pm grant ${context.packageName} ${Manifest.permission.WRITE_SECURE_SETTINGS}")
             }
+            disableAuthorizationTimeout(context)
             token = newToken()
             Log.i(TAG, "daemon launch: ${shell(adb, launchCommand(context, token, voice))}")
         }
@@ -162,6 +185,9 @@ object DaemonLauncher {
                 // Выключила снова — значит, сеть не доверенная: в ней каждое включение лишь показывает диалог
                 // о разрешении отладки, а перебор всех попыток занял бы около двух минут.
                 if (++turnedOff >= UNTRUSTED_AFTER) throw UntrustedWifiException()
+            } catch (e: PairingLostException) {
+                // Перезапуск отладки и новые попытки тут не помогут, а заняли бы около минуты.
+                throw e
             } catch (e: Exception) {
                 lastError = e
                 Log.w(TAG, "ADB connect attempt ${attempt + 1} failed, adb_wifi_enabled=${isWirelessAdbOn(context)}", e)
@@ -186,6 +212,9 @@ object DaemonLauncher {
             for (port in ports) {
                 val connected = try {
                     adb.connect(LOOPBACK, port)
+                } catch (e: AdbPairingRequiredException) {
+                    // adbd ответил, но ключ не узнал (SSLV3_ALERT_CERTIFICATE_UNKNOWN): это наш порт, дело в сопряжении.
+                    throw PairingLostException(e)
                 } catch (e: Exception) {
                     Log.w(TAG, "ADB connect to port $port failed: $e")
                     false
@@ -200,7 +229,11 @@ object DaemonLauncher {
             // Сразу после включения отладки adbd открывает порт не мгновенно.
             Thread.sleep(POLL_MS)
         } while (System.currentTimeMillis() < deadline)
-        return adb.connectTls(context, CONNECT_TIMEOUT_MS)
+        return try {
+            adb.connectTls(context, CONNECT_TIMEOUT_MS)
+        } catch (e: AdbPairingRequiredException) {
+            throw PairingLostException(e)
+        }
     }
 
     /**

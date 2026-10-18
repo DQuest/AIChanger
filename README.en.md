@@ -103,6 +103,10 @@ Done. You can switch the assistant in the "Assistant" section of the main screen
 Developer options can be turned off afterwards: the app turns them on for a couple of seconds at startup and
 restores them.
 
+> [!NOTE]
+> Android forgets a wireless debugging pairing that hasn't been used for a week. To keep it from expiring while the
+> phone runs for a long time without a reboot, AIChanger turns on "Disable adb authorization timeout" itself.
+
 ## Usage
 
 | Action | What happens |
@@ -119,6 +123,7 @@ restores them.
 - **Without Wi-Fi** the app waits for it with a notification and starts as soon as a network connects.
 - **On another network** where debugging isn't allowed, the app notices within seconds and waits for the right one.
 - If autostart didn't work, just open AIChanger: it restarts everything itself.
+- If the pairing stops working anyway, the app opens the pairing step of the wizard by itself.
 
 > [!IMPORTANT]
 > While the service isn't running, holding the button opens neither an assistant nor BlueLM (you turned it off).
@@ -231,6 +236,7 @@ All versions and APKs are on the [Releases](https://github.com/DQuest/AIChanger/
 
 | Version | Highlights |
 |---|---|
+| [3.9](release-notes/v3.9.md#english) | The pairing no longer expires after a week; if it is lost, the app asks to pair again right away |
 | [3.8](release-notes/v3.8.md#english) | First GitHub release: BlueLM is no longer touched, a more reliable service and shutdown, quick fallback on untrusted Wi-Fi |
 
 ## License

@@ -16,6 +16,8 @@ import dev.dquest.aichanger.Wifi
 data class UiState(
     val enabled: Boolean,
     val paired: Boolean,
+    /** Прежнее сопряжение перестало действовать, мастер просит его снова. */
+    val pairingLost: Boolean,
     val setupDone: Boolean,
     val setupSteps: Set<SetupStep>,
     val developerOptions: Boolean,
@@ -44,14 +46,17 @@ data class UiState(
                 enabled = PowerKeyController.isEnabled,
                 // Пока настраивают заново, мастер начинается с сопряжения, хотя прежнее ещё действует.
                 paired = PowerKeyController.isPaired && !PowerKeyController.isRepairing,
+                pairingLost = PowerKeyController.isPairingLost,
                 setupDone = PowerKeyController.isSetupDone,
                 setupSteps = PowerKeyController.completedSetupSteps,
                 developerOptions = Settings.Global.getInt(
                     context.contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0
                 ) == 1,
                 running = version == BuildConfig.VERSION_CODE,
-                // Демон прежней версии сейчас заменят новым: для пользователя это тот же запуск.
-                launching = PowerKeyController.launching || (version != null && version != BuildConfig.VERSION_CODE),
+                // Демон прежней версии сейчас заменят новым: для пользователя это тот же запуск. Но если замена уже
+                // не удалась, показываем ошибку: иначе «Запускается…» висело бы вечно, пока отвечает старый демон.
+                launching = PowerKeyController.launching ||
+                    (version != null && version != BuildConfig.VERSION_CODE && PowerKeyController.lastLaunchError == null),
                 waitingForWifi = PowerKeyController.waitingForWifi,
                 untrustedWifi = PowerKeyController.untrustedWifi,
                 wifiEnabled = Wifi.isEnabled(context),
