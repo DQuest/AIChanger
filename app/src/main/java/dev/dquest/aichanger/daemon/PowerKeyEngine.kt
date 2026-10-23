@@ -44,6 +44,8 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
     // Последняя ошибка прямого запуска ассистента (`am start`); только для сведений, кнопку она не ломает.
     @Volatile private var launchError: String? = null
     @Volatile private var fired = 0
+    // Сколько вызовов Gemini подряд не открыли панель ([onGeminiNotOpened]); только в потоке вызова ассистента.
+    private var geminiFailures = 0
 
     /** Кого вызывать, в формате [DaemonProtocol.ASSISTANT]. */
     @Volatile var assistant: String = DaemonProtocol.GOOGLE_APP
@@ -94,14 +96,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         if (DaemonProtocol.isDirect(target)) {
             restoreAssistantRole()
         } else {
-            val holder = sh(DaemonProtocol.GET_ASSISTANT_ROLE).lineSequence().firstOrNull()?.trim().orEmpty()
-            if (holder != target) {
-                if (restoreRole == null) {
-                    restoreRole = holder.ifEmpty { DaemonProtocol.NO_ASSISTANT }.takeIf(DaemonProtocol::isValidRestore)
-                }
-                exec(DaemonProtocol.assistantRoleArgs(target))
-            }
-            if (restoreRole == target) restoreRole = null
+            takeAssistantRole(target, roleHolder())
         }
         assistant = target
         return restoreRole
@@ -113,6 +108,38 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         exec(DaemonProtocol.assistantRoleArgs(previous))
         restoreRole = null
     }
+
+    /** Делает [target] системным ассистентом и запоминает, кого вернуть; [holder] — кто им сейчас. Вызывается под локом this. */
+    private fun takeAssistantRole(target: String, holder: String) {
+        if (holder != target) {
+            if (restoreRole == null) {
+                restoreRole = holder.ifEmpty { DaemonProtocol.NO_ASSISTANT }.takeIf(DaemonProtocol::isValidRestore)
+            }
+            exec(DaemonProtocol.assistantRoleArgs(target))
+        }
+        if (restoreRole == target) restoreRole = null
+    }
+
+    /**
+     * Снимает роль системного ассистента с [target] и отдаёт её снова, как при смене ассистента вручную: система
+     * заново поднимает его службу. Если роль тем временем ушла к другому, просто возвращаем её, как при выборе.
+     */
+    @Synchronized
+    private fun refreshAssistantRole(target: String) {
+        // Пока шёл вызов, выбрали другого ассистента или демон останавливают: роль уже не наша забота.
+        if (!active || assistant != target) return
+        val holder = roleHolder()
+        if (holder == target) {
+            Log.i(TAG, "daemon: re-adding $target as the assistant")
+            exec(DaemonProtocol.removeAssistantRoleArgs(target))
+            exec(DaemonProtocol.assistantRoleArgs(target))
+        } else {
+            Log.i(TAG, "daemon: the assistant role moved to '$holder', giving it back to $target")
+            takeAssistantRole(target, holder)
+        }
+    }
+
+    private fun roleHolder() = sh(DaemonProtocol.GET_ASSISTANT_ROLE).lineSequence().firstOrNull()?.trim().orEmpty()
 
     /**
      * Номер /dev/input/eventN меняется между загрузками, а имя устройства кнопки питания — между платформами
@@ -259,14 +286,37 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         }
         // Сразу после первой разблокировки Google-приложение ещё поднимается, и панель Gemini
         // может закрыться сама (мелькнёт только рамка). Тогда вызываем ещё раз.
-        repeat(ASSIST_ATTEMPTS) {
-            if (cancelled(id)) return
+        var attempts = 0
+        while (attempts < ASSIST_ATTEMPTS && !cancelled(id)) {
             val before = topActivity()
             launchAssistant(target)
+            attempts++
             if (waitForGemini(before, id)) {
                 fired++
+                geminiFailures = 0
                 return
             }
+        }
+        // Попытки кончились или нажатие отменено (держат до меню питания, нажали снова), а панели так и не было.
+        if (attempts > 0) onGeminiNotOpened(target)
+    }
+
+    /**
+     * Бывает, что Gemini перестаёт открываться: клавиша уходит, панели нет, меню питания через 2 с работает. И не оживает,
+     * пока роль системного ассистента не переназначат, даже в режиме голосовой клавиши: кнопку чинили, выключая
+     * и включая AIChanger или меняя ассистента, а простое открытие приложения не помогало. Одна неудача ещё
+     * ничего не значит (холодный старт Google, кнопку держали до меню), поэтому после [GEMINI_FAILURES_BEFORE_REFRESH]
+     * подряд переназначаем роль сами, и следующее удержание уже открывает Gemini.
+     */
+    private fun onGeminiNotOpened(target: String) {
+        geminiFailures++
+        Log.w(TAG, "daemon: Gemini didn't open, $geminiFailures time(s) in a row")
+        if (geminiFailures < GEMINI_FAILURES_BEFORE_REFRESH) return
+        geminiFailures = 0
+        try {
+            refreshAssistantRole(target)
+        } catch (e: Exception) {
+            Log.w(TAG, "daemon: refreshing the assistant role failed: $e")
         }
     }
 
@@ -384,6 +434,7 @@ class PowerKeyEngine(private val holdMs: Int, private val powerMenuMs: Int, @Vol
         const val UNLOCK_SETTLE_MS = 300L
         const val ASSIST_ATTEMPTS = 3
         const val GEMINI_WAIT_MS = 1500L
+        const val GEMINI_FAILURES_BEFORE_REFRESH = 2
         const val GEMINI_ACTIVITY = "googlequicksearchbox/com.google.android.apps.search.assistant.surfaces.voice.robin.ui.floaty.activity.FloatyActivity"
         const val GOOGLE_ACTIVITY = DaemonProtocol.GOOGLE_APP + "/"
     }

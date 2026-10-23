@@ -43,5 +43,9 @@ class DaemonProtocolTest {
             listOf("cmd", "role", "clear-role-holders", "android.app.role.ASSISTANT", "0"),
             DaemonProtocol.assistantRoleArgs(DaemonProtocol.NO_ASSISTANT),
         )
+        assertEquals(
+            listOf("cmd", "role", "remove-role-holder", "android.app.role.ASSISTANT", DaemonProtocol.GOOGLE_APP, "0"),
+            DaemonProtocol.removeAssistantRoleArgs(DaemonProtocol.GOOGLE_APP),
+        )
     }
 }
