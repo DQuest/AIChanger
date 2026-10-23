@@ -69,6 +69,10 @@ object DaemonProtocol {
         if (packageName == NO_ASSISTANT) listOf("cmd", "role", "clear-role-holders", ASSISTANT_ROLE, "0")
         else listOf("cmd", "role", "add-role-holder", ASSISTANT_ROLE, packageName, "0")
 
+    /** Снять роль системного ассистента с [packageName]; это имя пакета из [isValidTarget]. */
+    fun removeAssistantRoleArgs(packageName: String) =
+        listOf("cmd", "role", "remove-role-holder", ASSISTANT_ROLE, packageName, "0")
+
     const val OK = "ok"
     const val DENIED = "denied"
     /** Ответ на [ASSISTANT] с недопустимыми аргументами: выбор не принят. */
